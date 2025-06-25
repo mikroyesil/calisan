@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Page Not Found - Vertical Farm Control{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="card shadow-sm">
+        <div class="card-header bg-danger text-white">
+            <h4><i class="fas fa-exclamation-triangle"></i> 404 - Page Not Found</h4>
+        </div>
+        <div class="card-body">
+            <p class="lead">The page you were looking for could not be found.</p>
+            <p><strong>Requested URL:</strong> {{ requested_url }}</p>
+            
+            <hr>
+            
+            <h5>Available Pages:</h5>
+            <ul>
+                <li><a href="/">Dashboard</a></li>
+                <li><a href="/lights">Light Control</a></li>
+                <li><a href="/nutrients">Nutrient Control</a></li>
+                <li><a href="/watering">Watering Control</a></li>
+                <li><a href="/environment">Environment Control</a></li>
+                <li><a href="/settings">Settings</a></li>
+                <li><a href="/profiles">Growing Profiles</a></li>
+                <li><a href="/logs">System Logs</a></li>
+            </ul>
+            
+            <div class="mt-4">
+                <a href="/" class="btn btn-primary">
+                    <i class="fas fa-home"></i> Return to Dashboard
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

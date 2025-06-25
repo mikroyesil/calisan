@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+
+{% block title %}System Logs - Vertical Farm Control System{% endblock %}
+
+{% block page_title %}System Logs{% endblock %}
+
+{% block page_actions %}
+<button class="btn btn-sm btn-outline-primary me-2" id="refresh-logs-btn">
+    <i class="bi bi-arrow-clockwise"></i> Refresh
+</button>
+<button class="btn btn-sm btn-outline-primary" id="export-logs-btn">
+    <i class="bi bi-download"></i> Export
+</button>
+{% endblock %}
+
+{% block content %}
+<!-- Log Controls -->
+<div class="row mb-3">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="bi bi-funnel"></i> Log Filters</h4>
+            </div>
+            <div class="card-body">
+                <form id="log-filter-form">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <div class="mb-3">
+                                <label for="log-type" class="form-label">Log Type</label>
+                                <select class="form-select" id="log-type">
+                                    <option value="all">All Logs</option>
+                                    <option value="system">System Logs</option>
+                                    <option value="light_control">Lighting Logs</option>
+                                    <option value="nutrient_dose">Nutrient Logs</option>
+                                    <option value="device_state_change">Environment Logs</option>
+                                    <option value="watering">Irrigation Logs</option>
+                                    <option value="sensor_error">Sensor Error Logs</option>
+                                    <option value="user_action">User Action Logs</option>
+                                    <option value="user">User Logs</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="mb-3">
+                                <label for="log-level" class="form-label">Log Level</label>
+                                <select class="form-select" id="log-level">
+                                    <option value="all">All Levels</option>
+                                    <option value="info">Information</option>
+                                    <option value="warning">Warning</option>
+                                    <option value="error">Error</option>
+                                    <option value="critical">Critical</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="mb-3">
+                                <label for="log-date-from" class="form-label">From Date</label>
+                                <input type="date" class="form-control" id="log-date-from">
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="mb-3">
+                                <label for="log-date-to" class="form-label">To Date</label>
+                                <input type="date" class="form-control" id="log-date-to">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="log-search" class="form-label">Search</label>
+                                <input type="text" class="form-control" id="log-search" placeholder="Search log entries...">
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="mb-3">
+                                <label for="log-limit" class="form-label">Show Entries</label>
+                                <select class="form-select" id="log-limit">
+                                    <option value="50">50 entries</option>
+                                    <option value="100">100 entries</option>
+                                    <option value="200">200 entries</option>
+                                    <option value="500">500 entries</option>
+                                    <option value="1000">1000 entries</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-3 d-flex align-items-end">
+                            <div class="mb-3 w-100">
+                                <button type="submit" class="btn btn-primary w-100">
+                                    <i class="bi bi-search"></i> Apply Filters
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Logs Table -->
+<div class="row mb-3">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="bi bi-list-check"></i> Log Entries</h4>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover" id="logs-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Type</th>
+                                <th>Level</th>
+                                <th>Source</th>
+                                <th>Message</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logs-body">
+                            <!-- Will be populated by JavaScript -->
+                            <tr>
+                                <td colspan="6" class="text-center py-4">
+                                    <div class="spinner-border text-primary" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="card-footer">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        Showing <span id="shown-entries">0</span> of <span id="total-entries">0</span> entries
+                    </div>
+                    <nav aria-label="Log pagination">
+                        <ul class="pagination mb-0" id="logs-pagination">
+                            <!-- Will be populated by JavaScript -->
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Log Statistics -->
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-pie-chart"></i> Log Distribution</h4>
+            </div>
+            <div class="card-body">
+                <div class="chart-wrapper">
+                    <canvas id="logTypeChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-graph-up"></i> Activity Over Time</h4>
+            </div>
+            <div class="card-body">
+                <div class="chart-wrapper">
+                    <canvas id="logActivityChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Log Details Modal -->
+<div class="modal fade" id="log-details-modal" tabindex="-1" aria-labelledby="logDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="logDetailsModalLabel">Log Entry Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div>
+                                <strong>Timestamp:</strong> <span id="detail-timestamp"></span>
+                            </div>
+                            <div>
+                                <strong>Type:</strong> <span id="detail-type"></span>
+                            </div>
+                            <div>
+                                <strong>Level:</strong> <span id="detail-level"></span>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div>
+                                <strong>Source:</strong> <span id="detail-source"></span>
+                            </div>
+                            <div>
+                                <strong>Message:</strong> <span id="detail-message"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <h6>Event Details</h6>
+                    <div class="p-3 bg-light rounded" id="detail-json">
+                        <pre class="mb-0"></pre>
+                    </div>
+                </div>
+                
+                <div id="related-events-section" class="mb-3">
+                    <h6>Related Events</h6>
+                    <ul class="list-group" id="related-events-list">
+                        <!-- Will be populated by JavaScript -->
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/logs.js') }}"></script>
+{% endblock %}

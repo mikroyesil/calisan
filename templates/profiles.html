@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+
+{% block title %}Environment Control - Vertical Farm Control System{% endblock %}
+
+{% block page_title %}Environment Control{% endblock %}
+
+{% block page_actions %}
+<button id="environment-settings" class="btn btn-sm btn-outline-primary">
+    <i class="bi bi-gear"></i> Environment Settings
+</button>
+{% endblock %}
+
+{% block content %}
+<!-- Current Environmental Readings -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-speedometer"></i> Current Environmental Conditions</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="status-card">
+                            <i class="bi bi-thermometer-half"></i>
+                            <h5>Temperature</h5>
+                            <h3 id="current-temperature">--.-°C</h3>
+                            <span id="temp-status" class="badge bg-secondary">Unknown</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="status-card">
+                            <i class="bi bi-droplet"></i>
+                            <h5>Humidity</h5>
+                            <h3 id="current-humidity">--%</h3>
+                            <span id="humidity-status" class="badge bg-secondary">Unknown</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="status-card">
+                            <i class="bi bi-cloud"></i>
+                            <h5>CO2 Level</h5>
+                            <h3 id="current-co2">--- ppm</h3>
+                            <span id="co2-status" class="badge bg-secondary">Unknown</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="status-card">
+                            <i class="bi bi-wind"></i>
+                            <h5>Air Circulation</h5>
+                            <h3 id="fan-status">---</h3>
+                            <span id="air-status" class="badge bg-secondary">Unknown</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Environment Control Settings -->
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-sliders"></i> Environment Control Settings</h4>
+            </div>
+            <div class="card-body">
+                <form id="environment-settings-form">
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <h5><i class="bi bi-cloud"></i> CO2 Control</h5>
+                            <div class="mb-3">
+                                <label for="co2-target" class="form-label">Target CO2 Level (ppm)</label>
+                                <input type="number" class="form-control" id="co2-target" min="400" max="1500" step="50">
+                                <div class="form-text">Recommended: 800-1200 ppm for leafy greens</div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="co2-deadband" class="form-label">CO2 Deadband (ppm)</label>
+                                <input type="number" class="form-control" id="co2-deadband" min="50" max="200" step="10">
+                                <div class="form-text">Range around target before activation</div>
+                            </div>
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="co2-control-enabled">
+                                <label class="form-check-label" for="co2-control-enabled">Enable automatic CO2 control</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h5><i class="bi bi-droplet"></i> Humidity Control</h5>
+                            <div class="mb-3">
+                                <label class="form-label">Humidity Range (%)</label>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <div class="input-group">
+                                            <span class="input-group-text">Min</span>
+                                            <input type="number" class="form-control" id="humidity-min" min="40" max="80" step="1">
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="input-group">
+                                            <span class="input-group-text">Max</span>
+                                            <input type="number" class="form-control" id="humidity-max" min="40" max="80" step="1">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="form-text">Recommended: 60-70% for leafy greens</div>
+                            </div>
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="humidity-control-enabled">
+                                <label class="form-check-label" for="humidity-control-enabled">Enable automatic humidity control</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <h5><i class="bi bi-wind"></i> Air Circulation</h5>
+                            <div class="mb-3">
+                                <label for="fan-mode" class="form-label">Fan Operation Mode</label>
+                                <select class="form-select" id="fan-mode">
+                                    <option value="continuous">Continuous</option>
+                                    <option value="intermittent">Intermittent</option>
+                                    <option value="temperature">Temperature Controlled</option>
+                                    <option value="humidity">Humidity Controlled</option>
+                                    <option value="off">Off</option>
+                                </select>
+                            </div>
+                            <div class="mb-3" id="fan-interval-settings">
+                                <label for="fan-on-minutes" class="form-label">Fan Interval (minutes)</label>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <div class="input-group">
+                                            <span class="input-group-text">On</span>
+                                            <input type="number" class="form-control" id="fan-on-minutes" min="1" max="30" step="1">
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="input-group">
+                                            <span class="input-group-text">Off</span>
+                                            <input type="number" class="form-control" id="fan-off-minutes" min="1" max="30" step="1">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="form-text">Only used with Intermittent mode</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h5><i class="bi bi-shield"></i> Safety Limits</h5>
+                            <div class="mb-3">
+                                <label for="max-co2" class="form-label">Maximum CO2 Level (ppm)</label>
+                                <input type="number" class="form-control" id="max-co2" min="1000" max="2000" step="50">
+                                <div class="form-text">Safety cutoff (OSHA limit: 5000 ppm)</div>
+                            </div>
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle"></i> <strong>Safety Note:</strong> The system has built-in safeguards to prevent excessive CO2 accumulation. CO2 injection will be suspended if safety limits are exceeded.
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save"></i> Save Settings
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-hand-index"></i> Manual Control</h4>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i> <strong>Caution:</strong> Manual control overrides automatic settings. Use carefully!
+                </div>
+                
+                <h5><i class="bi bi-cloud"></i> CO2 Injection</h5>
+                <div class="btn-group w-100 mb-3">
+                    <button class="btn btn-success" id="co2-on-btn">Inject CO2</button>
+                    <button class="btn btn-danger" id="co2-off-btn">Stop Injection</button>
+                </div>
+                
+                <h5><i class="bi bi-droplet-slash"></i> Dehumidifier</h5>
+                <div class="btn-group w-100 mb-3">
+                    <button class="btn btn-success" id="dehumidifier-on-btn">Turn On</button>
+                    <button class="btn btn-danger" id="dehumidifier-off-btn">Turn Off</button>
+                </div>
+                
+                <h5><i class="bi bi-droplet"></i> Humidifier</h5>
+                <div class="btn-group w-100 mb-3">
+                    <button class="btn btn-success" id="humidifier-on-btn">Turn On</button>
+                    <button class="btn btn-danger" id="humidifier-off-btn">Turn Off</button>
+                </div>
+                
+                <h5><i class="bi bi-wind"></i> Circulation Fans</h5>
+                <div class="btn-group w-100 mb-3">
+                    <button class="btn btn-success" id="fans-on-btn">All Fans On</button>
+                    <button class="btn btn-danger" id="fans-off-btn">All Fans Off</button>
+                </div>
+                
+                <h5><i class="bi bi-arrow-repeat"></i> System Reset</h5>
+                <button class="btn btn-outline-secondary w-100" id="reset-environment-btn">
+                    Reset All Environmental Controls
+                </button>
+            </div>
+        </div>
+        
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-graph-up"></i> Status</h4>
+            </div>
+            <div class="card-body">
+                <h5><i class="bi bi-info-circle"></i> System Status</h5>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <tbody>
+                            <tr>
+                                <td>CO2 Injection:</td>
+                                <td id="co2-device-status"><span class="badge bg-secondary">Inactive</span></td>
+                            </tr>
+                            <tr>
+                                <td>Humidifier:</td>
+                                <td id="humidifier-status"><span class="badge bg-secondary">Inactive</span></td>
+                            </tr>
+                            <tr>
+                                <td>Dehumidifier:</td>
+                                <td id="dehumidifier-status"><span class="badge bg-secondary">Inactive</span></td>
+                            </tr>
+                            <tr>
+                                <td>Circulation Fans:</td>
+                                <td id="circulation-fan-status"><span class="badge bg-secondary">Inactive</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <h5 class="mt-3"><i class="bi bi-stopwatch"></i> Daily Runtime</h5>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span>CO2 Injection:</span>
+                        <span id="co2-runtime">-- / 60 minutes</span>
+                    </div>
+                    <div class="progress mb-2">
+                        <div id="co2-runtime-progress" class="progress-bar bg-primary" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span>Humidifier:</span>
+                        <span id="humidifier-runtime">-- / 120 minutes</span>
+                    </div>
+                    <div class="progress mb-2">
+                        <div id="humidifier-runtime-progress" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span>Dehumidifier:</span>
+                        <span id="dehumidifier-runtime">-- / 120 minutes</span>
+                    </div>
+                    <div class="progress mb-2">
+                        <div id="dehumidifier-runtime-progress" class="progress-bar bg-danger" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Environment Charts -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-graph-up"></i> Environmental Conditions</h4>
+            </div>
+            <div class="card-body">
+                <ul class="nav nav-tabs" id="chartTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="temp-humidity-tab" data-bs-toggle="tab" data-bs-target="#temp-humidity" type="button" role="tab">Temperature & Humidity</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="co2-tab" data-bs-toggle="tab" data-bs-target="#co2" type="button" role="tab">CO2 Levels</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="devices-tab" data-bs-toggle="tab" data-bs-target="#devices" type="button" role="tab">Device Activity</button>
+                    </li>
+                </ul>
+                <div class="tab-content" id="chartTabsContent">
+                    <div class="tab-pane fade show active" id="temp-humidity" role="tabpanel">
+                        <div class="chart-wrapper">
+                            <canvas id="tempHumidityChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="co2" role="tabpanel">
+                        <div class="chart-wrapper">
+                            <canvas id="co2Chart"></canvas>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="devices" role="tabpanel">
+                        <div class="chart-wrapper">
+                            <canvas id="deviceActivityChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Environment Events -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-clock-history"></i> Recent Environment Events</h4>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Device</th>
+                                <th>Action</th>
+                                <th>Trigger</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody id="environment-events">
+                            <!-- Will be populated by JavaScript -->
+                            <tr>
+                                <td colspan="5" class="text-center">Loading environment events...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/environment.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,310 @@
+{% extends "base.html" %}
+
+{% block title %}Nutrient Control - Vertical Farm Control System{% endblock %}
+
+{% block page_title %}Nutrient Control{% endblock %}
+
+{% block page_actions %}
+<button id="nutrient-settings" class="btn btn-sm btn-outline-primary">
+    <i class="bi bi-gear"></i> Nutrient Settings
+</button>
+{% endblock %}
+
+{% block content %}
+<!-- Current Readings -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-speedometer"></i> Current Readings</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="status-card">
+                            <i class="bi bi-flask"></i>
+                            <h5>pH Level</h5>
+                            <h3 id="current-ph">--.-</h3>
+                            <span id="ph-status" class="badge bg-secondary">Unknown</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="status-card">
+                            <i class="bi bi-speedometer"></i>
+                            <h5>EC Level</h5>
+                            <h3 id="current-ec">-.-- mS/cm</h3>
+                            <span id="ec-status" class="badge bg-secondary">Unknown</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="status-card">
+                            <i class="bi bi-thermometer-half"></i>
+                            <h5>Water Temperature</h5>
+                            <h3 id="current-water-temp">--.-°C</h3>
+                            <span id="water-temp-status" class="badge bg-secondary">Unknown</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="status-card">
+                            <i class="bi bi-clock-history"></i>
+                            <h5>Last Dose</h5>
+                            <h3 id="last-dose-time">--:--</h3>
+                            <span id="last-dose-info" class="badge bg-secondary">Unknown</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Nutrient Control Settings -->
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-sliders"></i> Nutrient Control Settings</h4>
+            </div>
+            <div class="card-body">
+                <form id="nutrient-settings-form">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <h5><i class="bi bi-speedometer"></i> EC Control</h5>
+                            <div class="mb-3">
+                                <label for="ec-target" class="form-label">Target EC (mS/cm)</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="ec-target" min="0.5" max="3.0" step="0.1">
+                                    <span class="input-group-text" id="last-saved-ec">Last: --</span>
+                                </div>
+                                <div class="form-text">Recommended: 1.0-1.5 for leafy greens</div>
+                            </div>
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="auto-nutrient">
+                                <label class="form-check-label" for="auto-nutrient">Enable automatic EC control</label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h5><i class="bi bi-flask"></i> pH Control</h5>
+                            <div class="mb-3">
+                                <label for="ph-target" class="form-label">Target pH</label>
+                                <div class="input-group">
+                                    <input type="number" class="form-control" id="ph-target" min="4.0" max="7.5" step="0.1">
+                                    <span class="input-group-text" id="last-saved-ph">Last: --</span>
+                                </div>
+                                <div class="form-text">Recommended: 5.5-6.5 for leafy greens</div>
+                            </div>
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="auto-ph">
+                                <label class="form-check-label" for="auto-ph">Enable automatic pH control</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <h5><i class="bi bi-gear"></i> Advanced Settings</h5>
+                            <div class="mb-3">
+                                <label for="ph-tolerance" class="form-label">pH Tolerance</label>
+                                <input type="number" class="form-control" id="ph-tolerance" min="0.05" max="0.5" step="0.05">
+                                <div class="form-text">Range around target before adjustment (±)</div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="ec-tolerance" class="form-label">EC Tolerance</label>
+                                <input type="number" class="form-control" id="ec-tolerance" min="0.05" max="0.5" step="0.05">
+                                <div class="form-text">Range around target before adjustment (±)</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save"></i> Save Settings
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-graph-up"></i> Status</h4>
+            </div>
+            <div class="card-body">
+                <h5><i class="bi bi-droplet"></i> Today's Usage</h5>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span>Nutrient Solution:</span>
+                        <span id="nutrient-used">-- / 100 ml</span>
+                    </div>
+                    <div class="progress mb-2">
+                        <div id="nutrient-progress" class="progress-bar bg-primary" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span>pH Up Solution:</span>
+                        <span id="ph-up-used">-- / 50 ml</span>
+                    </div>
+                    <div class="progress mb-2">
+                        <div id="ph-up-progress" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span>pH Down Solution:</span>
+                        <span id="ph-down-used">-- / 50 ml</span>
+                    </div>
+                    <div class="progress mb-2">
+                        <div id="ph-down-progress" class="progress-bar bg-danger" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
+                
+                <h5 class="mt-3"><i class="bi bi-info-circle"></i> System Status</h5>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <tbody>
+                            <tr>
+                                <td>Nutrient Pump:</td>
+                                <td id="nutrient-pump-status"><span class="badge bg-secondary">Inactive</span></td>
+                            </tr>
+                            <tr>
+                                <td>pH Up Pump:</td>
+                                <td id="ph-up-pump-status"><span class="badge bg-secondary">Inactive</span></td>
+                            </tr>
+                            <tr>
+                                <td>pH Down Pump:</td>
+                                <td id="ph-down-pump-status"><span class="badge bg-secondary">Inactive</span></td>
+                            </tr>
+                            <tr>
+                                <td>Auto Control:</td>
+                                <td id="auto-control-status"><span class="badge bg-secondary">Inactive</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Manual Control Section -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-tools"></i> Manual Pump Control</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">Nutrient Solution</h5>
+                                <div class="mb-3">
+                                    <label for="nutrient-dose-amount" class="form-label">Amount (ml)</label>
+                                    <input type="number" class="form-control" id="nutrient-dose-amount" value="10" min="1" max="50">
+                                </div>
+                                <button id="dose-nutrient-btn" class="btn btn-primary">
+                                    <i class="bi bi-droplet-fill"></i> Dose Nutrient A+B
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">pH Up Solution</h5>
+                                <div class="mb-3">
+                                    <label for="ph-up-dose-amount" class="form-label">Amount (ml)</label>
+                                    <input type="number" class="form-control" id="ph-up-dose-amount" value="5" min="1" max="20">
+                                </div>
+                                <button id="dose-ph-up-btn" class="btn btn-success">
+                                    <i class="bi bi-arrow-up-circle"></i> Dose pH Up
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">pH Down Solution</h5>
+                                <div class="mb-3">
+                                    <label for="ph-down-dose-amount" class="form-label">Amount (ml)</label>
+                                    <input type="number" class="form-control" id="ph-down-dose-amount" value="5" min="1" max="20">
+                                </div>
+                                <button id="dose-ph-down-btn" class="btn btn-danger">
+                                    <i class="bi bi-arrow-down-circle"></i> Dose pH Down
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row mt-3">
+                    <div class="col-md-12">
+                        <div class="d-flex justify-content-end">
+                            <button id="auto-dose-btn" class="btn btn-outline-primary me-2">
+                                <i class="bi bi-magic"></i> Run Auto Dose
+                            </button>
+                            <button id="flush-pumps-btn" class="btn btn-outline-secondary">
+                                <i class="bi bi-moisture"></i> Flush All Pumps
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Nutrient Events -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-clock-history"></i> Recent Nutrient Events</h4>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Type</th>
+                                <th>Details</th>
+                                <th>Before</th>
+                                <th>After</th>
+                            </tr>
+                        </thead>
+                        <tbody id="nutrient-events">
+                            <!-- Will be populated by JavaScript -->
+                            <tr>
+                                <td colspan="5" class="text-center">Loading nutrient events...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- TEMPORARY: Disable SocketIO to prevent XHR poll errors -->
+<!-- Update Socket.IO client version to match server -->
+<!-- <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script> -->
+<script>
+  // Add this configuration script before loading nutrients.js
+  window.socketConfig = {
+    transports: ['websocket'],
+    upgrade: false,
+    reconnectionAttempts: 5,
+    reconnectionDelay: 1000,
+    timeout: 10000,
+    autoConnect: true,
+    forceNew: false
+  };
+</script>
+<script src="{{ url_for('static', filename='js/nutrients.js') }}"></script>
+{% endblock %}

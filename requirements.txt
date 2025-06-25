@@ -1,0 +1,17 @@
+# Requirements for Vertical Farm Control System
+Flask>=2.0.0
+Flask-SocketIO>=5.0.0
+Flask-CORS>=3.0.0
+eventlet>=0.30.0
+python-engineio>=4.0.0
+python-socketio>=5.0.0
+pyserial>=3.5
+pymodbus>=2.5.3
+requests>=2.25.0
+numpy>=1.20.0
+SQLAlchemy==2.0.22
+Werkzeug==2.3.7
+bidict==0.22.1
+pytz>=2021.1
+APScheduler>=3.8.0
+psutil>=5.8.0

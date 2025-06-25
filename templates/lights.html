@@ -1,0 +1,604 @@
+{% extends "base.html" %}
+
+{% block title %}Light Control - Vertical Farm Control{% endblock %}
+
+{% block page_title %}Light Control{% endblock %}
+
+{% block page_actions %}
+<button id="allOnBtn" class="btn btn-sm btn-success me-2" onclick="turnOnAllLights()">
+    <i class="fas fa-power-off"></i> All Lights On
+</button>
+<button id="allOffBtn" class="btn btn-sm btn-danger" onclick="turnOffAllLights()">
+    <i class="fas fa-power-off"></i> All Lights Off
+</button>
+{% endblock %}
+
+{% block content %}
+<style>
+.relay-status-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+    transition: all 0.1s ease-in-out;
+}
+
+.relay-status-indicator.on {
+    background-color: #28a745;
+    box-shadow: 0 0 5px #28a745;
+    animation: pulse-green 0.5s ease-in-out;
+}
+
+.relay-status-indicator.off {
+    background-color: #6c757d;
+    animation: pulse-gray 0.5s ease-in-out;
+}
+
+@keyframes pulse-green {
+    0% { box-shadow: 0 0 0 #28a745; }
+    50% { box-shadow: 0 0 10px #28a745; }
+    100% { box-shadow: 0 0 5px #28a745; }
+}
+
+@keyframes pulse-gray {
+    0% { box-shadow: 0 0 5px #6c757d; }
+    50% { box-shadow: 0 0 0 #6c757d; }
+    100% { box-shadow: 0 0 0 #6c757d; }
+}
+
+.relay-card {
+    transition: all 0.1s ease-in-out;
+}
+
+.relay-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.relay-card .status-text {
+    transition: all 0.1s ease-in-out;
+    font-weight: bold;
+}
+
+.relay-card .relay-status-indicator {
+    transition: all 0.1s ease-in-out;
+}
+
+.relay-card .btn {
+    transition: all 0.1s ease-in-out;
+    border-width: 2px;
+}
+</style>
+<div class="row">
+    <!-- Main Panel: Relay Controls -->
+    <div class="col-md-8">
+        <!-- Direct Relay Control Panel -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <h4><i class="fas fa-toggle-on"></i> Relay Controls</h4>
+                <div class="d-flex align-items-center">
+                    <div id="refresh-indicator" class="spinner-border spinner-border-sm text-light me-2" 
+                         role="status" style="opacity: 0; transition: opacity 0.3s;">
+                        <span class="visually-hidden">Refreshing...</span>
+                    </div>
+                    <button id="refreshRelayStatesBtn" class="btn btn-sm btn-outline-light">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                    <small id="lastRefreshTime" class="text-muted ms-2" style="font-size: 0.75em;"></small>
+                    <small class="text-muted ms-2" style="font-size: 0.7em;">Auto-refresh: 1s</small>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row" id="relayToggleControl">
+                    <!-- Will be populated by JavaScript with relay toggles -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar: Simple Scheduler + Reference -->
+    <div class="col-md-4">
+        <!-- Simple Light Scheduler -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header">
+                <h4><i class="fas fa-clock"></i> Light Schedule</h4>
+            </div>
+            <div class="card-body">
+                <form id="simpleScheduleForm">
+                    <div class="mb-3">
+                        <label class="form-label">Turn ON at:</label>
+                        <input type="time" class="form-control" id="lightsOnTime" value="06:00">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Turn OFF at:</label>
+                        <input type="time" class="form-control" id="lightsOffTime" value="22:00">
+                    </div>
+                    <div class="form-check mb-3">
+                        <input type="checkbox" class="form-check-input" id="scheduleEnabled" checked>
+                        <label class="form-check-label">Enable Schedule</label>
+                    </div>
+                    <button type="button" class="btn btn-primary w-100" onclick="saveSimpleSchedule()">
+                        <i class="fas fa-save"></i> Save Schedule
+                    </button>
+                </form>
+                
+                <!-- Current Schedule Status -->
+                <div class="mt-3">
+                    <h6>Current Schedule:</h6>
+                    <div class="alert alert-info" id="scheduleStatus">
+                        Loading schedule...
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Relay Mapping Reference -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-secondary text-white">
+                <h4><i class="fas fa-map"></i> Channel Mapping</h4>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-sm table-hover mb-0">
+                    <thead>
+                        <tr class="table-secondary">
+                            <th>Ch</th>
+                            <th>Function</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>1-2</td><td>Light Zone 1 (A-B)</td></tr>
+                        <tr><td>3-4</td><td>Light Zone 2 (A-B)</td></tr>
+                        <tr><td>5-6</td><td>Light Zone 3 (A-B)</td></tr>
+                        <tr><td>7-8</td><td>Light Zone 4 (A-B)</td></tr>
+                        <tr><td>9-10</td><td>Light Zone 5 (A-B)</td></tr>
+                        <tr><td>11-12</td><td>Light Zone 6 (A-B)</td></tr>
+                        <tr><td>13-14</td><td>Light Zone 7 (A-B)</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toastContainer" class="toast-container position-fixed top-0 end-0 p-3"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Global variables
+let currentSchedule = {
+    start_time: '06:00',
+    end_time: '22:00',
+    enabled: true
+};
+
+// CREATE RELAY TOGGLE BUTTONS
+function createRelayToggleButtons() {
+    const container = document.getElementById('relayToggleControl');
+    if (!container) {
+        console.error('relayToggleControl container not found!');
+        return;
+    }
+    
+    console.log('Creating relay toggle buttons...');
+    container.innerHTML = '';
+    
+    for (let i = 1; i <= 14; i++) {
+        const zoneInfo = Math.floor((i-1)/2) + 1;
+        const section = (i-1) % 2 === 0 ? 'A' : 'B';
+        
+        const html = `
+            <div class="col-md-6 col-lg-4 mb-3">
+                <div class="card relay-card" data-relay-id="${i}">
+                    <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+                        <h6 class="mb-0">Relay ${i}</h6>
+                        <div class="relay-status-indicator off"></div>
+                    </div>
+                    <div class="card-body text-center">
+                        <div class="mb-2">
+                            <span class="badge bg-secondary status-text">OFF</span>
+                        </div>
+                        <div class="btn-group w-100" role="group">
+                            <button type="button" class="btn btn-outline-success relay-on-btn" 
+                                    data-relay-id="${i}" onclick="controlRelay(${i}, true)" onmousedown="this.style.transform='scale(0.95)'" onmouseup="this.style.transform='scale(1)'" onmouseleave="this.style.transform='scale(1)'">
+                                <i class="fas fa-power-off"></i> ON
+                            </button>
+                            <button type="button" class="btn btn-danger relay-off-btn" 
+                                    data-relay-id="${i}" onclick="controlRelay(${i}, false)" onmousedown="this.style.transform='scale(0.95)'" onmouseup="this.style.transform='scale(1)'" onmouseleave="this.style.transform='scale(1)'">
+                                <i class="fas fa-times"></i> OFF
+                            </button>
+                        </div>
+                        <small class="text-muted d-block mt-2">
+                            Zone ${zoneInfo} - Section ${section}
+                        </small>
+                    </div>
+                </div>
+            </div>
+        `;
+        container.insertAdjacentHTML('beforeend', html);
+    }
+    
+    console.log(`Created ${14} relay toggle buttons`);
+}
+
+// Function to update relay toggle button states - optimized for speed
+function updateRelayToggle(channel, state) {
+    const card = document.querySelector(`.card[data-relay-id="${channel}"]`);
+    if (!card) return;
+    
+    const onButton = card.querySelector('.relay-on-btn');
+    const offButton = card.querySelector('.relay-off-btn');
+    const statusText = card.querySelector('.status-text');
+    const statusIndicator = card.querySelector('.relay-status-indicator');
+    
+    // Batch DOM updates for better performance
+    if (state) {
+        // ON state
+        onButton?.classList.replace('btn-outline-success', 'btn-success');
+        offButton?.classList.replace('btn-danger', 'btn-outline-danger');
+        if (statusText) {
+            statusText.textContent = 'ON';
+            statusText.className = 'badge bg-success status-text';
+        }
+        if (statusIndicator) {
+            statusIndicator.className = 'relay-status-indicator on';
+        }
+    } else {
+        // OFF state
+        onButton?.classList.replace('btn-success', 'btn-outline-success');
+        offButton?.classList.replace('btn-outline-danger', 'btn-danger');
+        if (statusText) {
+            statusText.textContent = 'OFF';
+            statusText.className = 'badge bg-secondary status-text';
+        }
+        if (statusIndicator) {
+            statusIndicator.className = 'relay-status-indicator off';
+        }
+    }
+}
+
+// Enhanced controlRelay function with instant feedback
+function controlRelay(channel, state) {
+    console.log(`Controlling Relay ${channel} to ${state ? 'ON' : 'OFF'}`);
+    
+    // Immediately update UI for instant feedback - no waiting
+    updateRelayToggle(channel, state);
+    
+    // Fire and forget API call - don't wait for response to update UI
+    fetch('/api/relay-control', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({channel: channel, state: state})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            // Only show success toast, UI is already updated
+            showToast(`Relay ${channel} ${state ? 'ON' : 'OFF'}`, 'success');
+        } else {
+            // If server says it failed, revert the UI state
+            updateRelayToggle(channel, !state);
+            console.warn(`Relay ${channel} control failed:`, data);
+        }
+    })
+    .catch(error => {
+        // If error occurred, revert the UI state
+        updateRelayToggle(channel, !state);
+        console.error('Relay control error:', error);
+    });
+}
+
+// Functions for header buttons
+function turnOnAllLights() {
+    if (confirm('Turn ON all relays?')) {
+        for (let i = 1; i <= 14; i++) {
+            controlRelay(i, true);
+        }
+    }
+}
+
+function turnOffAllLights() {
+    if (confirm('Turn OFF all relays?')) {
+        for (let i = 1; i <= 14; i++) {
+            controlRelay(i, false);
+        }
+    }
+}
+
+// SIMPLE SCHEDULER FUNCTIONS
+function loadSimpleSchedule() {
+    fetch('/api/light-schedule/simple')
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.status === 'success' && data.schedule) {
+                currentSchedule = data.schedule;
+                
+                // Update form fields safely
+                const lightsOnTime = document.getElementById('lightsOnTime');
+                const lightsOffTime = document.getElementById('lightsOffTime');
+                const scheduleEnabled = document.getElementById('scheduleEnabled');
+                
+                if (lightsOnTime) lightsOnTime.value = currentSchedule.start_time;
+                if (lightsOffTime) lightsOffTime.value = currentSchedule.end_time;
+                if (scheduleEnabled) scheduleEnabled.checked = currentSchedule.enabled;
+                
+                updateScheduleStatus();
+                console.log('Schedule loaded successfully');
+            }
+        })
+        .catch(error => {
+            console.error('Error loading schedule:', error);
+            updateScheduleStatus();
+        });
+}
+
+function saveSimpleSchedule() {
+    const lightsOnTime = document.getElementById('lightsOnTime');
+    const lightsOffTime = document.getElementById('lightsOffTime');
+    const scheduleEnabled = document.getElementById('scheduleEnabled');
+    
+    if (!lightsOnTime || !lightsOffTime || !scheduleEnabled) {
+        showToast('Form elements not found', 'danger');
+        return;
+    }
+    
+    const onTime = lightsOnTime.value;
+    const offTime = lightsOffTime.value;
+    const enabled = scheduleEnabled.checked;
+    
+    const scheduleData = {
+        start_time: onTime,
+        end_time: offTime,
+        enabled: enabled,
+        affected_zones: [1, 2, 3, 4, 5, 6, 7] // All zones
+    };
+    
+    fetch('/api/light-schedule/simple', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(scheduleData)
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.status === 'success') {
+            currentSchedule = scheduleData;
+            updateScheduleStatus();
+            showToast('Schedule saved successfully!', 'success');
+        } else {
+            showToast(`Failed to save schedule: ${data.message || 'Unknown error'}`, 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Error saving schedule:', error);
+        showToast('Error saving schedule', 'danger');
+    });
+}
+
+function updateScheduleStatus() {
+    const statusDiv = document.getElementById('scheduleStatus');
+    if (!statusDiv) return;
+    
+    if (!currentSchedule.enabled) {
+        statusDiv.innerHTML = '<i class="fas fa-pause-circle text-warning"></i> Schedule is disabled';
+        statusDiv.className = 'alert alert-warning';
+        return;
+    }
+    
+    const now = new Date();
+    const currentTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    
+    // Check if lights should be on
+    const shouldBeOn = isTimeInRange(currentTime, currentSchedule.start_time, currentSchedule.end_time);
+    
+    if (shouldBeOn) {
+        statusDiv.innerHTML = `
+            <i class="fas fa-lightbulb text-success"></i> 
+            Lights should be ON<br>
+            <small>ON: ${currentSchedule.start_time} | OFF: ${currentSchedule.end_time}</small>
+        `;
+        statusDiv.className = 'alert alert-success';
+    } else {
+        statusDiv.innerHTML = `
+            <i class="fas fa-moon text-secondary"></i> 
+            Lights should be OFF<br>
+            <small>ON: ${currentSchedule.start_time} | OFF: ${currentSchedule.end_time}</small>
+        `;
+        statusDiv.className = 'alert alert-secondary';
+    }
+}
+
+function isTimeInRange(currentTime, startTime, endTime) {
+    if (startTime <= endTime) {
+        // Normal case: 06:00 to 22:00
+        return currentTime >= startTime && currentTime <= endTime;
+    } else {
+        // Overnight case: 22:00 to 06:00
+        return currentTime >= startTime || currentTime <= endTime;
+    }
+}
+
+// Update last refresh time display
+function updateLastRefreshTime() {
+    const lastRefreshElement = document.getElementById('lastRefreshTime');
+    if (lastRefreshElement) {
+        const now = new Date();
+        const timeString = now.toLocaleTimeString();
+        lastRefreshElement.textContent = `Updated: ${timeString}`;
+    }
+}
+
+// Toast function
+function showToast(message, type = 'info') {
+    const toastContainer = document.getElementById('toastContainer');
+    if (!toastContainer) {
+        console.error('Toast container not found!');
+        return;
+    }
+
+    const toastId = 'toast-' + Date.now();
+    const bgClass = {
+        'success': 'bg-success',
+        'danger': 'bg-danger',
+        'warning': 'bg-warning',
+        'info': 'bg-info'
+    }[type] || 'bg-secondary';
+
+    const toastHtml = `
+        <div id="${toastId}" class="toast align-items-center text-white ${bgClass} border-0" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body">${message}</div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        </div>
+    `;
+
+    toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+    const toastElement = document.getElementById(toastId);
+    
+    // Enhanced error handling for Bootstrap Toast
+    try {
+        if (typeof bootstrap !== 'undefined' && bootstrap.Toast) {
+            const toast = new bootstrap.Toast(toastElement, { delay: 3000 });
+            toast.show();
+            toastElement.addEventListener('hidden.bs.toast', () => toastElement.remove());
+        } else {
+            // Fallback if Bootstrap is not loaded
+            console.warn('Bootstrap not loaded, using fallback toast display');
+            toastElement.style.display = 'block';
+            setTimeout(() => {
+                toastElement.remove();
+            }, 3000);
+        }
+    } catch (error) {
+        console.error('Error creating toast:', error);
+        // Fallback display
+        toastElement.style.display = 'block';
+        setTimeout(() => {
+            toastElement.remove();
+        }, 3000);
+    }
+}
+
+// Main initialization
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Initializing lights page...');
+    
+    // Check if all required elements exist
+    const requiredElements = [
+        'relayToggleControl',
+        'refreshRelayStatesBtn',
+        'lightsOnTime',
+        'lightsOffTime',
+        'scheduleEnabled',
+        'scheduleStatus'
+    ];
+    
+    const missingElements = requiredElements.filter(id => !document.getElementById(id));
+    if (missingElements.length > 0) {
+        console.error('Missing required elements:', missingElements);
+        showToast(`Page initialization error: Missing elements: ${missingElements.join(', ')}`, 'danger');
+        return;
+    }
+    
+    // Create the relay toggle buttons
+    try {
+        createRelayToggleButtons();
+    } catch (error) {
+        console.error('Error creating relay buttons:', error);
+        showToast('Failed to create relay controls', 'danger');
+        return;
+    }
+    
+    // Initialize scheduler
+    try {
+        loadSimpleSchedule();
+    } catch (error) {
+        console.error('Error loading schedule:', error);
+        showToast('Failed to load schedule', 'warning');
+    }
+    
+    // Setup refresh button and auto-refresh functionality
+    const refreshBtn = document.getElementById('refreshRelayStatesBtn');
+    
+    function refreshRelayStates(showToastMsg = false) {
+        // Show loading state on refresh button only for manual refresh
+        if (showToastMsg && refreshBtn) {
+            const originalHTML = refreshBtn.innerHTML;
+            refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+            refreshBtn.disabled = true;
+        }
+        
+        fetch('/api/relay-states')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.status === 'success' && data.states) {
+                    // Fix: Handle both string and numeric keys from API
+                    for (let i = 1; i <= 14; i++) {
+                        const state = data.states[i.toString()] || data.states[i] || false;
+                        updateRelayToggle(i, state);
+                    }
+                    if (showToastMsg) {
+                        showToast('Relay states refreshed', 'success');
+                    }
+                } else {
+                    if (showToastMsg) {
+                        showToast('Invalid response from server', 'warning');
+                    }
+                }
+            })
+            .catch(error => {
+                if (showToastMsg) {
+                    showToast('Error loading relay states', 'danger');
+                }
+            })
+            .finally(() => {
+                // Restore refresh button state only for manual refresh
+                if (showToastMsg && refreshBtn) {
+                    refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
+                    refreshBtn.disabled = false;
+                }
+                
+                // Update last refresh time only for manual refresh
+                if (showToastMsg) {
+                    updateLastRefreshTime();
+                }
+            });
+    }
+    
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', function() {
+            refreshRelayStates(true); // Show toast on manual refresh
+        });
+        
+        // Load initial relay states
+        setTimeout(() => {
+            refreshRelayStates(false); // No toast on initial load
+        }, 500);
+    }
+    
+    // Auto-refresh relay states every 1 second for maximum responsiveness
+    setInterval(() => {
+        refreshRelayStates(false); // No toast on auto-refresh
+    }, 1000);
+    
+    // Update schedule status every minute
+    setInterval(updateScheduleStatus, 60000);
+});
+</script>
+{% endblock %}

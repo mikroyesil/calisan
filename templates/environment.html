@@ -1,0 +1,1397 @@
+{% extends "base.html" %}
+
+{% block title %}Environment Control - Vertical Farm Control System{% endblock %}
+
+{% block page_title %}Environment Control{% endblock %}
+
+{% block page_actions %}
+<button id="environment-settings" class="btn btn-sm btn-outline-primary">
+    <i class="bi bi-gear"></i> Environment Settings
+</button>
+<button id="show-diagnostics-btn" class="btn btn-sm btn-outline-info ms-2">
+    <i class="bi bi-wrench"></i> Diagnostics
+</button>
+<button id="manual-refresh-sensors" class="btn btn-sm btn-outline-success ms-2">
+    <i class="bi bi-arrow-clockwise"></i> Refresh Sensors
+</button>
+{% endblock %}
+
+{% block content %}
+<!-- Sensor Status Indicator -->
+<div class="mb-3">
+    <h5>Sensor Status: <span id="sensor-connection-status" class="badge bg-secondary">Loading...</span></h5>
+</div>
+
+<!-- Update the diagnostics panel with mock data option -->
+<div class="mb-3 alert alert-danger d-none" id="api-diagnostics">
+    <p><strong>API Connection Issue Detected</strong></p>
+    <p>The sensor API at <code>/api/sensors</code> is not responding. This could be due to server issues or network connectivity problems.</p>
+    <div class="d-grid gap-2 d-md-flex">
+        <button id="manual-refresh-btn" class="btn btn-primary">
+            <i class="bi bi-arrow-clockwise"></i> Try Again
+        </button>
+        <button id="enable-mock-btn" class="btn btn-warning">
+            <i class="bi bi-display"></i> Use Demo Mode
+        </button>
+        <button id="api-test-btn" class="btn btn-info">
+            <i class="bi bi-speedometer"></i> Diagnostics
+        </button>
+    </div>
+</div>
+
+<!-- Current Environmental Readings -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-speedometer"></i> Current Environmental Conditions</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="status-card">
+                            <i class="bi bi-thermometer-half"></i>
+                            <h5>Temperature</h5>
+                            <h3 id="current-temperature" class="sensor-data">--.-°C</h3>
+                            <span id="temp-status" class="badge bg-secondary">Unknown</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="status-card">
+                            <i class="bi bi-droplet"></i>
+                            <h5>Humidity</h5>
+                            <h3 id="current-humidity" class="sensor-data">--%</h3>
+                            <span id="humidity-status" class="badge bg-secondary">Unknown</span>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="status-card">
+                            <i class="bi bi-cloud"></i>
+                            <h5>CO2 Level</h5>
+                            <h3 id="current-co2" class="sensor-data">--- ppm</h3>
+                            <span id="co2-status" class="badge bg-secondary">Unknown</span>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Environment Control Settings -->
+<div class="row">
+    <div class="col-md-8">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-sliders"></i> Environment Control Settings</h4>
+            </div>
+            <div class="card-body">
+                <form id="environment-settings-form">
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <!-- CO2 Control System Header -->
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 class="mb-0"><i class="bi bi-cloud text-primary"></i> CO2 Control System</h5>
+                                <span class="badge bg-info">Light-Based Control</span>
+                            </div>
+                            
+                            <!-- Current Status Card -->
+                            <div class="card border-primary mb-3">
+                                <div class="card-header bg-primary text-white py-2">
+                                    <div class="row text-center">
+                                        <div class="col-4">
+                                            <div id="light-status-indicator">
+                                                <span id="light-status-icon" class="fs-5">☀️</span><br>
+                                                <small id="light-status-text" class="fw-bold">Lights ON</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div id="co2-cycle-info">
+                                                <span id="co2-active-target" class="fs-5 fw-bold">1000 ppm</span><br>
+                                                <small id="co2-cycle-type">Day Target</small>
+                                            </div>
+                                        </div>
+                                        <div class="col-4">
+                                            <div>
+                                                <div id="co2-current-reading" class="fs-5 fw-bold">394 ppm</div>
+                                                <small>Current</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="card-body py-3">
+                                    <div class="row">
+                                        <div class="col-6">
+                                            <div class="text-center">
+                                                <div id="co2-status-badge" class="badge bg-success fs-6 px-3 py-2">auto</div>
+                                                <div class="small text-muted mt-1">Status</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="text-center">
+                                                <div id="co2-cycle-badge" class="badge bg-info fs-6 px-3 py-2">Day</div>
+                                                <div class="small text-muted mt-1">Cycle</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Control Settings -->
+                            <div class="card border-light">
+                                <div class="card-body">
+                                    <!-- Control Mode -->
+                                    <div class="mb-3">
+                                        <label for="co2-mode" class="form-label fw-semibold">
+                                            <i class="bi bi-gear text-secondary"></i> Control Mode
+                                        </label>
+                                        <select class="form-select" id="co2-mode">
+                                            <option value="auto">🤖 Automatic (Follows Light Schedule)</option>
+                                            <option value="manual_on">🔛 Manual ON (Override)</option>
+                                            <option value="manual_off">🔴 Manual OFF (Override)</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <!-- Target Settings in Compact Row -->
+                                    <div class="mb-3">
+                                        <label class="form-label fw-semibold">
+                                            <i class="bi bi-bullseye text-secondary"></i> CO2 Targets
+                                        </label>
+                                        <div class="row g-2">
+                                            <div class="col-6">
+                                                <div class="input-group input-group-sm">
+                                                    <span class="input-group-text bg-warning text-dark">☀️</span>
+                                                    <input type="number" class="form-control" id="co2-day-target" min="100" max="1500" step="1" value="1200" placeholder="Day">
+                                                    <span class="input-group-text">ppm</span>
+                                                </div>
+                                            </div>
+                                            <div class="col-6">
+                                                <div class="input-group input-group-sm">
+                                                    <span class="input-group-text bg-dark text-light">🌙</span>
+                                                    <input type="number" class="form-control" id="co2-night-target" min="100" max="1200" step="1" value="800" placeholder="Night">
+                                                    <span class="input-group-text">ppm</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="form-text">
+                                            <i class="bi bi-info-circle text-info"></i> 
+                                            Automatically switches based on lighting schedule
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Tolerance Setting -->
+                                    <div class="mb-0">
+                                        <label for="co2-tolerance" class="form-label fw-semibold">
+                                            <i class="bi bi-sliders text-secondary"></i> Tolerance
+                                        </label>
+                                        <div class="input-group input-group-sm">
+                                            <span class="input-group-text">±</span>
+                                            <input type="number" class="form-control" id="co2-tolerance" min="1" max="100" step="1" value="25">
+                                            <span class="input-group-text">ppm</span>
+                                        </div>
+                                        <div class="form-text">Prevents rapid on/off switching</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h5><i class="bi bi-droplet"></i> Humidity Control</h5>
+                            <div class="mb-3">
+                                <label class="form-label">Humidity Range (%)</label>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <div class="input-group">
+                                            <span class="input-group-text">Min</span>
+                                            <input type="number" class="form-control" id="humidity-min" min="40" max="80" step="1">
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="input-group">
+                                            <span class="input-group-text">Max</span>
+                                            <input type="number" class="form-control" id="humidity-max" min="40" max="80" step="1">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="form-text">Recommended: 60-70% for leafy greens</div>
+                            </div>
+                            <div class="mb-3 form-check">
+                                <input type="checkbox" class="form-check-input" id="humidity-control-enabled">
+                                <label class="form-check-label" for="humidity-control-enabled">Enable automatic humidity control</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save"></i> Save Settings
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-hand-index"></i> Manual Control</h4>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i> <strong>Caution:</strong> Manual control overrides automatic settings. Use carefully!
+                </div>
+                
+                <h5><i class="bi bi-cloud"></i> CO2 Injection</h5>
+                <div class="btn-group w-100 mb-3">
+                    <button class="btn btn-success" id="co2-on-btn">Inject CO2</button>
+                    <button class="btn btn-danger" id="co2-off-btn">Stop Injection</button>
+                </div>
+                <div class="mb-3">
+                    <small class="text-muted">
+                        <strong>Arduino:</strong> 192.168.1.140:32100<br>
+                        <strong>Channels:</strong> 1 & 2 (CO2 Valve)
+                    </small>
+                </div>
+                
+                <h5><i class="bi bi-droplet-slash"></i> Dehumidifier</h5>
+                <div class="btn-group w-100 mb-3">
+                    <button class="btn btn-success" id="dehumidifier-on-btn">Turn On</button>
+                    <button class="btn btn-danger" id="dehumidifier-off-btn">Turn Off</button>
+                </div>
+                
+                <h5><i class="bi bi-droplet"></i> Humidifier</h5>
+                <div class="btn-group w-100 mb-3">
+                    <button class="btn btn-success" id="humidifier-on-btn">Turn On</button>
+                    <button class="btn btn-danger" id="humidifier-off-btn">Turn Off</button>
+                </div>
+                
+                <h5><i class="bi bi-snow"></i> Air Conditioner</h5>
+                
+                <!-- Basic Power Control -->
+                <div class="btn-group w-100 mb-3">
+                    <button class="btn btn-success" id="air-conditioner-on-btn">Turn On</button>
+                    <button class="btn btn-danger" id="air-conditioner-off-btn">Turn Off</button>
+                </div>
+                
+                <!-- Advanced IR Controls -->
+                <div class="card border-info mb-3">
+                    <div class="card-header bg-info text-white py-2">
+                        <h6 class="mb-0"><i class="bi bi-broadcast"></i> IR Controls</h6>
+                    </div>
+                    <div class="card-body p-3">
+                        <!-- Temperature Control -->
+                        <div class="mb-3">
+                            <label class="form-label">Temperature</label>
+                            <div class="input-group input-group-sm">
+                                <button class="btn btn-outline-secondary" id="ac-temp-down-btn">-</button>
+                                <input type="number" class="form-control text-center" id="ac-temperature" 
+                                       min="16" max="30" value="24" readonly>
+                                <span class="input-group-text">°C</span>
+                                <button class="btn btn-outline-secondary" id="ac-temp-up-btn">+</button>
+                            </div>
+                        </div>
+                        
+                        <!-- Mode Control -->
+                        <div class="mb-3">
+                            <label class="form-label">Mode</label>
+                            <select class="form-select form-select-sm" id="ac-mode">
+                                <option value="cool">Cool</option>
+                                <option value="heat">Heat</option>
+                                <option value="fan">Fan</option>
+                                <option value="auto">Auto</option>
+                                <option value="dry">Dry</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Fan Speed Control -->
+                        <div class="mb-3">
+                            <label class="form-label">Fan Speed</label>
+                            <select class="form-select form-select-sm" id="ac-fan-speed">
+                                <option value="low">Low</option>
+                                <option value="medium">Medium</option>
+                                <option value="high">High</option>
+                                <option value="auto">Auto</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Brand: Fixed to Airfel -->
+                        <div class="mb-2">
+                            <label class="form-label">AC Brand</label>
+                            <div class="form-control-plaintext">
+                                <span class="badge bg-info">Airfel</span>
+                                <small class="text-muted ms-2">Fixed Configuration</small>
+                            </div>
+                        </div>
+                        
+                        <!-- IR Status -->
+                        <div class="text-center">
+                            <small class="text-muted">
+                                <span id="ac-ir-status" class="badge bg-secondary">IR Disconnected</span>
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <small class="text-muted">
+                        <strong>Relay Channel:</strong> 15 (Power Control)<br>
+                        <strong>IR Channel:</strong> ESP32 (Advanced Features)
+                    </small>
+                </div>
+                
+                <h5><i class="bi bi-wind"></i> Circulation Fans</h5>
+                
+                <!-- Group Control -->
+                <div class="btn-group w-100 mb-3">
+                    <button class="btn btn-success" id="fans-continuous-btn">Continuous</button>
+                    <button class="btn btn-warning" id="fans-intermittent-btn">Intermittent</button>
+                    <button class="btn btn-danger" id="fans-off-btn">All Off</button>
+                </div>
+                
+                <!-- Individual Fan Controls -->
+                <div class="card border-info mb-3">
+                    <div class="card-header bg-info text-white py-2">
+                        <h6 class="mb-0"><i class="bi bi-sliders"></i> Individual Fan Control</h6>
+                    </div>
+                    <div class="card-body p-3">
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <small class="fw-bold">Fan 1 (Ch.17)</small>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-success" id="fan-1-on-btn" data-fan="1" data-action="on">ON</button>
+                                        <button class="btn btn-outline-danger" id="fan-1-off-btn" data-fan="1" data-action="off">OFF</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <small class="fw-bold">Fan 2 (Ch.18)</small>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-success" id="fan-2-on-btn" data-fan="2" data-action="on">ON</button>
+                                        <button class="btn btn-outline-danger" id="fan-2-off-btn" data-fan="2" data-action="off">OFF</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <small class="fw-bold">Fan 3 (Ch.19)</small>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-success" id="fan-3-on-btn" data-fan="3" data-action="on">ON</button>
+                                        <button class="btn btn-outline-danger" id="fan-3-off-btn" data-fan="3" data-action="off">OFF</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <small class="fw-bold">Fan 4 (Ch.20)</small>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-success" id="fan-4-on-btn" data-fan="4" data-action="on">ON</button>
+                                        <button class="btn btn-outline-danger" id="fan-4-off-btn" data-fan="4" data-action="off">OFF</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <small class="fw-bold">Fan 5 (Ch.21)</small>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-success" id="fan-5-on-btn" data-fan="5" data-action="on">ON</button>
+                                        <button class="btn btn-outline-danger" id="fan-5-off-btn" data-fan="5" data-action="off">OFF</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <small class="fw-bold">Fan 6 (Ch.22)</small>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-success" id="fan-6-on-btn" data-fan="6" data-action="on">ON</button>
+                                        <button class="btn btn-outline-danger" id="fan-6-off-btn" data-fan="6" data-action="off">OFF</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <small class="fw-bold">Fan 7 (Ch.23)</small>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-success" id="fan-7-on-btn" data-fan="7" data-action="on">ON</button>
+                                        <button class="btn btn-outline-danger" id="fan-7-off-btn" data-fan="7" data-action="off">OFF</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <small class="fw-bold">Fan 8 (Ch.24)</small>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-success" id="fan-8-on-btn" data-fan="8" data-action="on">ON</button>
+                                        <button class="btn btn-outline-danger" id="fan-8-off-btn" data-fan="8" data-action="off">OFF</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="text-center mt-2">
+                            <small class="text-muted">
+                                <i class="bi bi-info-circle"></i> Individual control overrides group settings
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Add fan timing controls -->
+                <div id="fan-timing-controls" class="mb-3">
+                    <h6>Intermittent Timing</h6>
+                    <div class="row">
+                        <div class="col-6">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">On</span>
+                                <input type="number" class="form-control" id="fan-on-minutes" min="1" max="30" value="5">
+                                <span class="input-group-text">min</span>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text">Off</span>
+                                <input type="number" class="form-control" id="fan-off-minutes" min="1" max="30" value="10">
+                                <span class="input-group-text">min</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <h5><i class="bi bi-arrow-repeat"></i> System Reset</h5>
+                <button class="btn btn-outline-secondary w-100" id="reset-environment-btn">
+                    Reset All Environmental Controls
+                </button>
+            </div>
+        </div>
+        
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-graph-up"></i> Status</h4>
+            </div>
+            <div class="card-body">
+                <h5><i class="bi bi-info-circle"></i> System Status</h5>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <tbody>
+                            <tr>
+                                <td>CO2 Injection:</td>
+                                <td id="co2-device-status"><span class="badge bg-secondary">Inactive</span></td>
+                            </tr>
+                            <tr>
+                                <td>Humidifier:</td>
+                                <td id="humidifier-status"><span class="badge bg-secondary">Inactive</span></td>
+                            </tr>
+                            <tr>
+                                <td>Dehumidifier:</td>
+                                <td id="dehumidifier-status"><span class="badge bg-secondary">Inactive</span></td>
+                            </tr>
+                            <tr>
+                                <td>Air Conditioner:</td>
+                                <td id="air-conditioner-status"><span class="badge bg-secondary">Inactive</span></td>
+                            </tr>
+                            <tr>
+                                <td>Circulation Fans:</td>
+                                <td id="circulation-fan-status"><span class="badge bg-secondary">Inactive</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Individual Fan Status -->
+                <h5 class="mt-3"><i class="bi bi-wind"></i> Individual Fan Status</h5>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <tbody>
+                            <tr>
+                                <td>Fan 1 (Ch.17):</td>
+                                <td id="fan-1-status"><span class="badge bg-secondary">OFF</span></td>
+                                <td>Fan 2 (Ch.18):</td>
+                                <td id="fan-2-status"><span class="badge bg-secondary">OFF</span></td>
+                            </tr>
+                            <tr>
+                                <td>Fan 3 (Ch.19):</td>
+                                <td id="fan-3-status"><span class="badge bg-secondary">OFF</span></td>
+                                <td>Fan 4 (Ch.20):</td>
+                                <td id="fan-4-status"><span class="badge bg-secondary">OFF</span></td>
+                            </tr>
+                            <tr>
+                                <td>Fan 5 (Ch.21):</td>
+                                <td id="fan-5-status"><span class="badge bg-secondary">OFF</span></td>
+                                <td>Fan 6 (Ch.22):</td>
+                                <td id="fan-6-status"><span class="badge bg-secondary">OFF</span></td>
+                            </tr>
+                            <tr>
+                                <td>Fan 7 (Ch.23):</td>
+                                <td id="fan-7-status"><span class="badge bg-secondary">OFF</span></td>
+                                <td>Fan 8 (Ch.24):</td>
+                                <td id="fan-8-status"><span class="badge bg-secondary">OFF</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <h5 class="mt-3"><i class="bi bi-stopwatch"></i> Daily Runtime</h5>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span>CO2 Injection:</span>
+                        <span id="co2-runtime">-- / 60 minutes</span>
+                    </div>
+                    <div class="progress mb-2">
+                        <div id="co2-runtime-progress" class="progress-bar bg-primary" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span>Humidifier:</span>
+                        <span id="humidifier-runtime">-- / 120 minutes</span>
+                    </div>
+                    <div class="progress mb-2">
+                        <div id="humidifier-runtime-progress" class="progress-bar bg-success" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span>Dehumidifier:</span>
+                        <span id="dehumidifier-runtime">-- / 120 minutes</span>
+                    </div>
+                    <div class="progress mb-2">
+                        <div id="dehumidifier-runtime-progress" class="progress-bar bg-danger" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Environment Charts -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-graph-up"></i> Environmental Conditions</h4>
+            </div>
+            <div class="card-body">
+                <ul class="nav nav-tabs" id="chartTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="temp-humidity-tab" data-bs-toggle="tab" data-bs-target="#temp-humidity" type="button" role="tab">Temperature & Humidity</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="co2-tab" data-bs-toggle="tab" data-bs-target="#co2" type="button" role="tab">CO2 Levels</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="devices-tab" data-bs-toggle="tab" data-bs-target="#devices" type="button" role="tab">Device Activity</button>
+                    </li>
+                </ul>
+                <div class="tab-content" id="chartTabsContent">
+                    <div class="tab-pane fade show active" id="temp-humidity" role="tabpanel">
+                        <div class="chart-wrapper">
+                            <canvas id="tempHumidityChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="co2" role="tabpanel">
+                        <div class="chart-wrapper">
+                            <canvas id="co2Chart"></canvas>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="devices" role="tabpanel">
+                        <div class="chart-wrapper">
+                            <canvas id="deviceActivityChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Environment Events -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h4><i class="bi bi-clock-history"></i> Recent Environment Events</h4>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Device</th>
+                                <th>Action</th>
+                                <th>Trigger</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody id="environment-events">
+                            <!-- Will be populated by JavaScript -->
+                            <tr>
+                                <td colspan="5" class="text-center">Loading environment events...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Performance-optimized inline script
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log("Environment page loaded");
+        
+        // Single timer for all periodic updates to reduce overhead
+        let mainTimer = null;
+        
+        // Performance: Cache all DOM elements at startup to avoid repeated queries
+        const elements = {};
+        function initializeElements() {
+            const elementIds = [
+                'co2-current-reading', 'co2-active-target', 'co2-cycle-type',
+                'co2-status-badge', 'co2-cycle-badge', 'light-status-icon',
+                'light-status-text', 'fan-on-minutes', 'fan-off-minutes',
+                'circulation-fan-status', 'co2-device-status', 'co2-mode',
+                'co2-day-target', 'co2-night-target', 'co2-tolerance',
+                'air-conditioner-status'
+            ];
+            
+            elementIds.forEach(id => {
+                elements[id] = document.getElementById(id);
+            });
+        }
+        
+        initializeElements();
+        
+        // Load fan statuses when page becomes visible (tab switching, etc.)
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                console.log("Page became visible, reloading fan statuses...");
+                loadIndividualFanStatuses();
+            }
+        });
+        
+        // Also load when window regains focus
+        window.addEventListener('focus', function() {
+            console.log("Window gained focus, reloading fan statuses...");
+            loadIndividualFanStatuses();
+        });
+        
+        // Performance: Optimized manual control with request deduplication
+        let pendingRequests = new Set();
+        
+        function manualControl(device, state) {
+            const requestKey = `${device}_${state}`;
+            if (pendingRequests.has(requestKey)) {
+                console.log(`Request ${requestKey} already pending, skipping duplicate`);
+                return;
+            }
+            
+            pendingRequests.add(requestKey);
+            console.log(`Manual control: ${device} -> ${state}`);
+            
+            const endpoint = device === 'co2_injector' ? '/api/co2/control' : '/api/manual-control';
+            const payload = device === 'co2_injector' ? 
+                { state: state } : 
+                { type: 'environment', device_id: device, state: state };
+            
+            fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(handleControlResponse)
+            .catch(error => showError(`${device} control failed: ${error.message}`))
+            .finally(() => pendingRequests.delete(requestKey));
+        }
+        
+        // Performance: Optimized circulation fan control - DIRECT RELAY CONTROL
+        function controlCirculationFans(mode) {
+            const fanChannels = [17, 18, 19, 20, 21, 22, 23, 24]; // Relay channels for fans 1-8
+            let targetState = false;
+            
+            if (mode === 'continuous') {
+                targetState = true;
+            } else if (mode === 'intermittent') {
+                targetState = true; // Start with ON for intermittent mode
+            } else if (mode === 'off') {
+                targetState = false;
+            }
+            
+            // Control all fan relays directly
+            let completedRequests = 0;
+            let successCount = 0;
+            
+            fanChannels.forEach((channel, index) => {
+                const fanNumber = index + 1;
+                
+                fetch('/api/relay-control', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        channel: channel,
+                        state: targetState
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    completedRequests++;
+                    if (data.status === 'success') {
+                        successCount++;
+                        updateIndividualFanDisplay(fanNumber, targetState);
+                    } else {
+                        console.error(`Failed to control Fan ${fanNumber} (Ch.${channel}): ${data.message}`);
+                    }
+                    
+                    // When all requests are complete
+                    if (completedRequests === fanChannels.length) {
+                        if (successCount === fanChannels.length) {
+                            showSuccess(`All circulation fans set to ${mode} mode (${successCount}/${fanChannels.length})`);
+                            updateFanStatusDisplay(mode);
+                        } else {
+                            showError(`Partial success: ${successCount}/${fanChannels.length} fans controlled`);
+                        }
+                        
+                        // Reload status after a short delay
+                        setTimeout(() => {
+                            loadIndividualFanStatuses();
+                        }, 1000);
+                    }
+                })
+                .catch(error => {
+                    completedRequests++;
+                    console.error(`Error controlling Fan ${fanNumber} (Ch.${channel}):`, error);
+                    
+                    if (completedRequests === fanChannels.length) {
+                        showError(`Fan control completed with errors: ${successCount}/${fanChannels.length} successful`);
+                    }
+                });
+            });
+        }
+        
+        // Individual fan control function - DIRECT RELAY CONTROL
+        function controlIndividualFan(fanNumber, action) {
+            // Show immediate visual feedback
+            const clickedBtn = document.getElementById(`fan-${fanNumber}-${action}-btn`);
+            if (clickedBtn) {
+                clickedBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Working...';
+                clickedBtn.disabled = true;
+            }
+            
+            // Calculate relay channel: Fan 1 = Channel 17, Fan 2 = Channel 18, etc.
+            const relayChannel = 16 + parseInt(fanNumber);
+            const state = action === 'on';
+            
+            // Direct relay control
+            fetch('/api/relay-control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    channel: relayChannel,
+                    state: state
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Restore button text and enable it
+                if (clickedBtn) {
+                    clickedBtn.innerHTML = action === 'on' ? 'ON' : 'OFF';
+                    clickedBtn.disabled = false;
+                }
+                
+                if (data.status === 'success') {
+                    showSuccess(`Fan ${fanNumber} (Ch.${relayChannel}) turned ${action.toUpperCase()}`);
+                    // Update button display immediately
+                    updateIndividualFanDisplay(fanNumber, state);
+                    // Then reload actual hardware state after a short delay
+                    setTimeout(() => {
+                        loadIndividualFanStatuses();
+                    }, 1000);
+                } else {
+                    showError(`Failed to control Fan ${fanNumber}: ${data.message}`);
+                }
+            })
+            .catch(error => {
+                // Restore button text and enable it on error
+                if (clickedBtn) {
+                    clickedBtn.innerHTML = action === 'on' ? 'ON' : 'OFF';
+                    clickedBtn.disabled = false;
+                }
+                showError(`Fan ${fanNumber} control error: ${error.message}`);
+            });
+        }
+        
+        // Update individual fan button states
+        function updateIndividualFanDisplay(fanNumber, state) {
+            const onBtn = document.getElementById(`fan-${fanNumber}-on-btn`);
+            const offBtn = document.getElementById(`fan-${fanNumber}-off-btn`);
+            const statusElement = document.getElementById(`fan-${fanNumber}-status`);
+            
+            console.log(`Updating Fan ${fanNumber} display: ${state ? 'ON' : 'OFF'}`);
+            
+            if (onBtn && offBtn) {
+                // Reset all classes first
+                onBtn.className = 'btn btn-sm me-1';
+                offBtn.className = 'btn btn-sm';
+                
+                if (state) {
+                    // Fan is ON - highlight ON button, dim OFF button
+                    onBtn.classList.add('btn-success');
+                    offBtn.classList.add('btn-outline-danger');
+                } else {
+                    // Fan is OFF - dim ON button, highlight OFF button
+                    onBtn.classList.add('btn-outline-success');
+                    offBtn.classList.add('btn-danger');
+                }
+                
+                console.log(`Fan ${fanNumber} buttons updated: ON=${onBtn.className}, OFF=${offBtn.className}`);
+            } else {
+                console.error(`Buttons not found for Fan ${fanNumber}: onBtn=${!!onBtn}, offBtn=${!!offBtn}`);
+            }
+            
+            if (statusElement) {
+                statusElement.innerHTML = `<span class="badge ${state ? 'bg-success' : 'bg-secondary'}">${state ? 'ON' : 'OFF'}</span>`;
+                console.log(`Fan ${fanNumber} status element updated: ${state ? 'ON' : 'OFF'}`);
+            } else {
+                console.error(`Status element not found for Fan ${fanNumber}`);
+            }
+        }
+        
+        // Load individual fan statuses - READ ONLY (no relay setting)
+        function loadIndividualFanStatuses() {
+            console.log("Loading individual fan statuses from hardware...");
+            
+            // Get status for relay channels 17-24 (fans 1-8)
+            for (let fanNumber = 1; fanNumber <= 8; fanNumber++) {
+                const relayChannel = 16 + fanNumber;
+                
+                // Simply read the current relay status from hardware
+                fetch(`/api/relay-status/${relayChannel}`)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.status === 'success') {
+                            const currentState = Boolean(data.state);
+                            console.log(`Fan ${fanNumber} (Ch.${relayChannel}): ${currentState ? 'ON' : 'OFF'}`);
+                            updateIndividualFanDisplay(fanNumber, currentState);
+                        } else {
+                            console.error(`API error for Fan ${fanNumber}:`, data.message);
+                            // If status fetch fails, display as OFF
+                            updateIndividualFanDisplay(fanNumber, false);
+                        }
+                    })
+                    .catch(error => {
+                        console.error(`Network error for Fan ${fanNumber} (Ch.${relayChannel}):`, error);
+                        // Set default OFF state if read fails
+                        updateIndividualFanDisplay(fanNumber, false);
+                    });
+            }
+        }
+        
+        // Performance: Cached element update for fan status
+        function updateFanStatusDisplay(mode) {
+            const statusElement = elements['circulation-fan-status'];
+            if (!statusElement) return;
+            
+            const statusMap = {
+                continuous: '<span class="badge bg-success">Continuous</span>',
+                intermittent: '<span class="badge bg-warning">Intermittent</span>',
+                off: '<span class="badge bg-secondary">Off</span>'
+            };
+            
+            statusElement.innerHTML = statusMap[mode] || '';
+        }
+        
+        // OPTIMIZED: Consolidated response handlers
+        function handleControlResponse(data) {
+            if (data.status === 'success') {
+                showSuccess(data.message);
+                loadCO2Status();
+            } else {
+                showError(`Control failed: ${data.message}`);
+            }
+        }
+        
+        function showSuccess(message) {
+            // Use simple alert for now - could be replaced with toast system
+            alert(`✅ ${message}`);
+        }
+        
+        function showError(message) {
+            console.error(message);
+            alert(`❌ ${message}`);
+        }
+        
+        // OPTIMIZED: Efficient CO2 settings functions with cached elements
+        function loadCO2Settings() {
+            fetch('/api/environment/settings')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        updateFormFields(data.settings);
+                        loadCO2Status();
+                        loadLightScheduleStatus();
+                    } else {
+                        console.error('Failed to load CO2 settings:', data.message);
+                    }
+                })
+                .catch(error => console.error('Error loading CO2 settings:', error));
+        }
+        
+        function updateFormFields(settings) {
+            const fieldMap = {
+                'co2-mode': settings.co2_mode || 'auto',
+                'co2-day-target': settings.co2_day_target || 1200,
+                'co2-night-target': settings.co2_night_target || 800,
+                'co2-tolerance': settings.co2_tolerance !== undefined ? settings.co2_tolerance : 25
+            };
+            
+            Object.entries(fieldMap).forEach(([id, value]) => {
+                const element = document.getElementById(id);
+                if (element) element.value = value;
+            });
+        }
+        
+        function loadCO2Status() {
+            fetch('/api/co2/status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        updateCO2StatusDisplay(data.co2_status);
+                    }
+                })
+                .catch(error => console.error('Error loading CO2 status:', error));
+        }
+        
+        // Performance: Batch DOM updates for better rendering performance
+        function updateCO2StatusDisplay(status) {
+            // Use requestAnimationFrame for smooth DOM updates
+            requestAnimationFrame(() => {
+                if (elements['co2-current-reading'] && status.current_co2 > 0) {
+                    elements['co2-current-reading'].textContent = status.current_co2 + ' ppm';
+                }
+                
+                if (elements['co2-active-target']) {
+                    elements['co2-active-target'].textContent = status.target_co2 + ' ppm';
+                }
+                
+                if (elements['co2-cycle-type']) {
+                    elements['co2-cycle-type'].textContent = status.is_day_cycle ? 'Day Target' : 'Night Target';
+                }
+                
+                if (elements['co2-status-badge']) {
+                    elements['co2-status-badge'].textContent = status.co2_mode;
+                    elements['co2-status-badge'].className = status.co2_state ? 
+                        'badge bg-success fs-6 px-3 py-2' : 'badge bg-secondary fs-6 px-3 py-2';
+                }
+                
+                if (elements['co2-cycle-badge']) {
+                    elements['co2-cycle-badge'].textContent = status.is_day_cycle ? 'Day' : 'Night';
+                    elements['co2-cycle-badge'].className = status.is_day_cycle ? 
+                        'badge bg-warning text-dark fs-6 px-3 py-2' : 'badge bg-dark fs-6 px-3 py-2';
+                }
+                
+                updateLightStatusDisplay(status.is_day_cycle);
+                updateDeviceStatus(status.co2_state);
+            });
+        }
+        
+        function updateLightStatusDisplay(isDayCycle) {
+            const lightIcon = elements['light-status-icon'];
+            const lightText = elements['light-status-text'];
+            
+            if (lightIcon && lightText) {
+                if (isDayCycle) {
+                    lightIcon.textContent = '☀️';
+                    lightText.textContent = 'Lights ON';
+                } else {
+                    lightIcon.textContent = '🌙';
+                    lightText.textContent = 'Lights OFF';
+                }
+                
+                // Performance: Update card header color efficiently
+                const cardHeader = lightIcon.closest('.card-header');
+                if (cardHeader) {
+                    cardHeader.className = isDayCycle ? 
+                        'card-header bg-warning text-dark py-2' : 
+                        'card-header bg-dark text-white py-2';
+                }
+            }
+        }
+        
+        function updateDeviceStatus(isActive) {
+            const deviceStatus = elements['co2-device-status'];
+            if (deviceStatus) {
+                const statusText = isActive ? 'Active' : 'Inactive';
+                const statusClass = isActive ? 'bg-success' : 'bg-secondary';
+                deviceStatus.innerHTML = `<span class="badge ${statusClass}">${statusText}</span>`;
+            }
+        }
+        
+        function updateAirConditionerStatus(isActive) {
+            const acStatus = elements['air-conditioner-status'];
+            if (acStatus) {
+                const statusText = isActive ? 'Active' : 'Inactive';
+                const statusClass = isActive ? 'bg-success' : 'bg-secondary';
+                acStatus.innerHTML = `<span class="badge ${statusClass}">${statusText}</span>`;
+            }
+        }
+        
+        // Cache for light schedule data to avoid repeated API calls
+        let lightScheduleCache = null;
+        let lightScheduleCacheTime = 0;
+        const CACHE_DURATION = 5000; // 5 seconds - faster updates
+        
+        function loadLightScheduleStatus() {
+            // Check cache first
+            const now = Date.now();
+            if (lightScheduleCache && (now - lightScheduleCacheTime) < CACHE_DURATION) {
+                processLightSchedule(lightScheduleCache);
+                return;
+            }
+            
+            fetch('/api/light-schedule/simple')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success' && data.schedule) {
+                        // Cache the result
+                        lightScheduleCache = data.schedule;
+                        lightScheduleCacheTime = now;
+                        processLightSchedule(data.schedule);
+                    } else {
+                        showFallbackLightStatus();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading light schedule:', error);
+                    showFallbackLightStatus();
+                });
+        }
+        
+        function processLightSchedule(schedule) {
+            if (!schedule || !schedule.enabled) {
+                updateLightStatusDisplay(false);
+                updateActiveTarget(false);
+                return;
+            }
+            
+            const now = new Date();
+            const currentTime = now.getHours() * 60 + now.getMinutes();
+            
+            const startTime = timeStringToMinutes(schedule.start_time);
+            const endTime = timeStringToMinutes(schedule.end_time);
+            
+            let lightsOn = false;
+            
+            if (startTime <= endTime) {
+                // Same day schedule
+                lightsOn = currentTime >= startTime && currentTime < endTime;
+            } else {
+                // Overnight schedule (crosses midnight)
+                lightsOn = currentTime >= startTime || currentTime < endTime;
+            }
+            
+            updateLightStatusDisplay(lightsOn);
+            updateActiveTarget(lightsOn);
+        }
+        
+        function updateActiveTarget(lightsOn) {
+            const co2DayTarget = parseInt(elements['co2-day-target']?.value) || 1200;
+            const co2NightTarget = parseInt(elements['co2-night-target']?.value) || 800;
+            const activeTarget = lightsOn ? co2DayTarget : co2NightTarget;
+            const cycleType = lightsOn ? 'Day Target' : 'Night Target';
+            
+            if (elements['co2-active-target']) {
+                elements['co2-active-target'].textContent = activeTarget + ' ppm';
+            }
+            if (elements['co2-cycle-type']) {
+                elements['co2-cycle-type'].textContent = cycleType;
+            }
+        }
+        
+        function timeStringToMinutes(timeString) {
+            const [hours, minutes] = timeString.split(':').map(Number);
+            return hours * 60 + minutes;
+        }
+        
+        function showFallbackLightStatus() {
+            const lightIcon = elements['light-status-icon'];
+            const lightText = elements['light-status-text'];
+            
+            if (lightIcon && lightText) {
+                lightIcon.textContent = '❓';
+                lightText.textContent = 'Status Unknown';
+            }
+            
+            if (elements['co2-active-target']) {
+                elements['co2-active-target'].textContent = '1200 ppm';
+            }
+            if (elements['co2-cycle-type']) {
+                elements['co2-cycle-type'].textContent = 'Default Day Target';
+            }
+        }
+        
+        function saveCO2Settings() {
+            const settings = {
+                co2_mode: elements['co2-mode']?.value,
+                co2_day_target: parseInt(elements['co2-day-target']?.value),
+                co2_night_target: parseInt(elements['co2-night-target']?.value),
+                co2_tolerance: parseInt(elements['co2-tolerance']?.value)
+            };
+            
+            fetch('/api/environment/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(settings)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showSuccess('CO2 settings saved successfully!');
+                    updateFormFields(data.settings);
+                    loadCO2Status();
+                    loadLightScheduleStatus();
+                } else {
+                    showError('Failed to save CO2 settings: ' + data.message);
+                }
+            })
+            .catch(error => showError('Error saving CO2 settings: ' + error.message));
+        }
+        
+        function resetEnvironment() {
+            fetch('/api/reset-environment', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    showSuccess('Environment controls reset successfully');
+                    if (window.environmentUtils) {
+                        window.environmentUtils.fetchSensorData();
+                    }
+                })
+                .catch(error => showError('Failed to reset environment controls: ' + error.message));
+        }
+        
+        // Performance: Single consolidated timer to reduce resource usage
+        function setupConsolidatedTimer() {
+            if (mainTimer) {
+                clearInterval(mainTimer);
+            }
+            
+            // Combined periodic updates every 5 seconds for real-time response
+            mainTimer = setInterval(() => {
+                loadCO2Status();
+                loadLightScheduleStatus();
+                loadIndividualFanStatuses(); // Check fan status every 5 seconds
+            }, 5000);
+            
+            console.log("Consolidated timer setup complete - checking fan statuses every 5 seconds");
+        }
+        
+        // Performance: Optimized event listener setup with event delegation
+        function setupEventListeners() {
+            // Use event delegation for better performance with many buttons
+            document.addEventListener('click', function(e) {
+                const id = e.target.id;
+                
+                // Individual fan control handlers
+                if (e.target.dataset.fan && e.target.dataset.action) {
+                    e.preventDefault();
+                    const fanNumber = e.target.dataset.fan;
+                    const action = e.target.dataset.action;
+                    controlIndividualFan(fanNumber, action);
+                    return;
+                }
+                
+                // Manual control handlers
+                const controlHandlers = {
+                    'co2-on-btn': () => manualControl('co2_injector', true),
+                    'co2-off-btn': () => manualControl('co2_injector', false),
+                    'humidifier-on-btn': () => manualControl('humidifier', true),
+                    'humidifier-off-btn': () => manualControl('humidifier', false),
+                    'dehumidifier-on-btn': () => manualControl('dehumidifier', true),
+                    'dehumidifier-off-btn': () => manualControl('dehumidifier', false),
+                    'air-conditioner-on-btn': () => controlAirConditioner('power', true),
+                    'air-conditioner-off-btn': () => controlAirConditioner('power', false),
+                    'ac-temp-up-btn': () => adjustACTemperature(1),
+                    'ac-temp-down-btn': () => adjustACTemperature(-1),
+                    'fans-continuous-btn': () => controlCirculationFans('continuous'),
+                    'fans-intermittent-btn': () => controlCirculationFans('intermittent'),
+                    'fans-off-btn': () => controlCirculationFans('off'),
+                    'reset-environment-btn': resetEnvironment
+                };
+                
+                // Handle AC mode and fan speed changes
+                const selectHandlers = {
+                    'ac-mode': (value) => controlAirConditioner('mode', null, value),
+                    'ac-fan-speed': (value) => controlAirConditioner('fan_speed', null, value)
+                };
+                
+                if (e.target.tagName === 'SELECT' && selectHandlers[id]) {
+                    e.preventDefault();
+                    selectHandlers[id](e.target.value);
+                    return;
+                }
+                
+                if (controlHandlers[id]) {
+                    e.preventDefault();
+                    controlHandlers[id]();
+                    return;
+                }
+                
+                // Utility button handlers
+                const utilityHandlers = {
+                    'show-diagnostics-btn': () => {
+                        const diagPanel = document.getElementById('api-diagnostics');
+                        if (diagPanel) {
+                            diagPanel.classList.toggle('d-none');
+                            if (!diagPanel.classList.contains('d-none') && window.environmentUtils) {
+                                window.environmentUtils.diagnoseAPI();
+                            }
+                        }
+                    },
+                    'enable-mock-btn': () => {
+                        if (window.environmentUtils && window.environmentUtils.enableMockData) {
+                            window.environmentUtils.enableMockData();
+                            const diagPanel = document.getElementById('api-diagnostics');
+                            if (diagPanel) diagPanel.classList.add('d-none');
+                        }
+                    },
+                    'manual-refresh-sensors': () => {
+                        if (window.fetchSensorData) {
+                            window.fetchSensorData();
+                        }
+                    }
+                };
+                
+                if (utilityHandlers[id]) {
+                    e.preventDefault();
+                    utilityHandlers[id]();
+                }
+            });
+            
+            // Form submission with performance optimization
+            const form = document.getElementById('environment-settings-form');
+            if (form) {
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    saveCO2Settings();
+                });
+            }
+        }
+        
+        // Air Conditioner IR Control Functions
+        function controlAirConditioner(command, state = null, value = null) {
+            const payload = {
+                type: 'air_conditioner',
+                command: command
+            };
+            
+            if (state !== null) payload.state = state;
+            if (value !== null) {
+                if (command === 'mode') payload.mode = value;
+                else if (command === 'fan_speed') payload.fan_speed = value;
+                else if (command === 'temperature') payload.temperature = value;
+            }
+            
+            fetch('/api/manual-control', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showSuccess(data.message || `AC ${command} successful`);
+                    // Refresh AC status
+                    setTimeout(loadACStatus, 500);
+                } else {
+                    showError(data.message || `AC ${command} failed`);
+                }
+            })
+            .catch(error => {
+                console.error('AC control error:', error);
+                showError(`AC ${command} error: ${error.message}`);
+            });
+        }
+        
+        function adjustACTemperature(change) {
+            const tempInput = document.getElementById('ac-temperature');
+            if (!tempInput) return;
+            
+            const currentTemp = parseInt(tempInput.value);
+            const newTemp = Math.max(16, Math.min(30, currentTemp + change));
+            
+            if (newTemp !== currentTemp) {
+                tempInput.value = newTemp;
+                controlAirConditioner('temperature', null, newTemp);
+            }
+        }
+        
+        function loadACStatus() {
+            fetch('/api/air-conditioner/status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        updateACDisplay(data.data);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading AC status:', error);
+                });
+        }
+        
+        function updateACDisplay(acData) {
+            // Update temperature display
+            const tempInput = document.getElementById('ac-temperature');
+            if (tempInput && acData.settings) {
+                tempInput.value = acData.settings.temperature || 24;
+            }
+            
+            // Update mode selection
+            const modeSelect = document.getElementById('ac-mode');
+            if (modeSelect && acData.settings) {
+                modeSelect.value = acData.settings.mode || 'cool';
+            }
+            
+            // Update fan speed selection
+            const fanSpeedSelect = document.getElementById('ac-fan-speed');
+            if (fanSpeedSelect && acData.settings) {
+                fanSpeedSelect.value = acData.settings.fan_speed || 'medium';
+            }
+            
+            // Update IR status
+            const irStatus = document.getElementById('ac-ir-status');
+            if (irStatus && acData.ir_controller) {
+                const connected = acData.ir_controller.connected;
+                irStatus.textContent = connected ? 'IR Connected' : 'IR Disconnected';
+                irStatus.className = `badge ${connected ? 'bg-success' : 'bg-secondary'}`;
+            }
+            
+            // Update power status in the status table
+            updateAirConditionerStatus(acData.relay_state || acData.settings?.power);
+        }
+        
+        // Initialize everything with performance optimizations
+        setupEventListeners();
+        
+        // Load initial statuses once DOM is ready
+        setTimeout(() => {
+            loadIndividualFanStatuses(); // Load fan statuses immediately
+            loadCO2Settings();
+            loadACStatus(); // Load AC status on page load
+        }, 100);
+        
+        // Load fan statuses again after a longer delay to ensure hardware is ready
+        setTimeout(() => {
+            loadIndividualFanStatuses(); // Second load to ensure hardware state sync
+        }, 2000);
+        
+        setupConsolidatedTimer();
+        
+        console.log("Environment page initialization complete with performance optimizations");
+    });
+</script>
+{% endblock %}{% block scripts %}<script src="{{ url_for('static', filename='js/environment.js') }}?v={{ now().timestamp() }}"></script>{% endblock %}

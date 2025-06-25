@@ -1,0 +1,531 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Vertical Farm Control{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ now() }}">
+{% endblock %}
+
+{% block extra_js %}
+<!-- TEMPORARY: Disable SocketIO to prevent XHR poll errors -->
+<!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script> -->
+<script src="{{ url_for('static', filename='js/dashboard.js') }}?v={{ now() }}"></script>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <!-- Status Cards -->
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h4><i class="bi bi-thermometer-half"></i> Environment</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6">
+                        <p class="card-text mb-1">Temperature</p>
+                        <h2 class="display-6" id="temperature">--°C</h2>
+                    </div>
+                    <div class="col-6">
+                        <p class="card-text mb-1">Humidity</p>
+                        <h2 class="display-6" id="humidity">--%</h2>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-6">
+                        <p class="card-text mb-1">CO₂</p>
+                        <h2 class="display-6" id="co2">-- ppm</h2>
+                    </div>
+                    <div class="col-6">
+                        <div id="environmentStatus"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h4><i class="bi bi-droplet"></i> Nutrients</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6">
+                        <p class="card-text mb-1">pH</p>
+                        <h2 class="display-6" id="ph">--</h2>
+                    </div>
+                    <div class="col-6">
+                        <p class="card-text mb-1">EC</p>
+                        <h2 class="display-6" id="ec">-- mS/cm</h2>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <div id="nutrientStatus"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h4><i class="bi bi-lightbulb"></i> Lighting</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-12">
+                        <div id="lightZones" class="d-flex flex-wrap gap-2 mb-3">
+                            <span class="badge rounded-pill" data-zone="1">Zone 1</span>
+                            <span class="badge rounded-pill" data-zone="2">Zone 2</span>
+                            <span class="badge rounded-pill" data-zone="3">Zone 3</span>
+                            <span class="badge rounded-pill" data-zone="4">Zone 4</span>
+                            <span class="badge rounded-pill" data-zone="5">Zone 5</span>
+                            <span class="badge rounded-pill" data-zone="6">Zone 6</span>
+                            <span class="badge rounded-pill" data-zone="7">Zone 7</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="row mt-2">
+                    <div class="col-12">
+                        <div id="lightStatus"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4 mb-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <h4><i class="bi bi-water"></i> Watering Status</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-12">
+                        <p class="card-text mb-1">Pump Status</p>
+                        <h2 class="display-6" id="pump-status">--</h2>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts -->
+<div class="row mb-4">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="bi bi-graph-up"></i> Temperature & Humidity</h4>
+            </div>
+            <div class="card-body">
+                <div class="chart-wrapper">
+                    <canvas id="tempHumidityChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="bi bi-graph-up"></i> pH & EC</h4>
+            </div>
+            <div class="card-body">
+                <div class="chart-wrapper">
+                    <canvas id="phEcChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="bi bi-graph-up"></i> CO₂ Levels</h4>
+            </div>
+            <div class="card-body">
+                <div class="chart-wrapper">
+                    <canvas id="co2Chart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="bi bi-clock-history"></i> Recent Events</h4>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Type</th>
+                                <th>Description</th>
+                            </tr>
+                        </thead>
+                        <tbody id="eventsTable">
+                            <tr>
+                                <td colspan="3" class="text-center">Loading events...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- System Status -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="bi bi-hdd-network"></i> System Status</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3 mb-3">
+                        <div class="d-flex align-items-center">
+                            <div class="flex-shrink-0">
+                                <i class="bi bi-hdd-network fs-1 text-primary"></i>
+                            </div>
+                            <div class="flex-grow-1 ms-3">
+                                <h6 class="mb-0">Modbus Connection</h6>
+                                <span id="modbusStatus" class="badge bg-success">Connected</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="d-flex align-items-center">
+                            <div class="flex-shrink-0">
+                                <i class="bi bi-database fs-1 text-primary"></i>
+                            </div>
+                            <div class="flex-grow-1 ms-3">
+                                <h6 class="mb-0">Database</h6>
+                                <span id="databaseStatus" class="badge bg-success">Operational</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="d-flex align-items-center">
+                            <div class="flex-shrink-0">
+                                <i class="bi bi-cpu fs-1 text-primary"></i>
+                            </div>
+                            <div class="flex-grow-1 ms-3">
+                                <h6 class="mb-0">System Load</h6>
+                                <div class="progress" style="height: 10px;">
+                                    <div id="systemLoad" class="progress-bar" role="progressbar" style="width: 25%;" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100">25%</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        <div class="d-flex align-items-center">
+                            <div class="flex-shrink-0">
+                                <i class="bi bi-clock-history fs-1 text-primary"></i>
+                            </div>
+                            <div class="flex-grow-1 ms-3">
+                                <h6 class="mb-0">Uptime</h6>
+                                <span id="systemUptime">1d 6h 32m</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Grow Zone Status -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="bi bi-seedling"></i> Grow Zone Status</h4>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Zone</th>
+                                <th>Crop</th>
+                                <th>Growth Stage</th>
+                                <th>Days Remaining</th>
+                                <th>Light Status</th>
+                                <th>Water Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Zone 1</td>
+                                <td>Lettuce (Butterhead)</td>
+                                <td>
+                                    <div class="progress" style="height: 10px;">
+                                        <div class="progress-bar bg-success" role="progressbar" style="width: 75%;" aria-valuenow="75" aria-valuemin="0" aria-valuemax="100"></div>
+                                    </div>
+                                    <small>Mature Growth (75%)</small>
+                                </td>
+                                <td>7 days</td>
+                                <td><span class="badge bg-success">On</span></td>
+                                <td><span class="badge bg-secondary">Off</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary">Details</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Zone 2</td>
+                                <td>Spinach</td>
+                                <td>
+                                    <div class="progress" style="height: 10px;">
+                                        <div class="progress-bar bg-success" role="progressbar" style="width: 90%;" aria-valuenow="90" aria-valuemin="0" aria-valuemax="100"></div>
+                                    </div>
+                                    <small>Ready for Harvest (90%)</small>
+                                </td>
+                                <td>2 days</td>
+                                <td><span class="badge bg-success">On</span></td>
+                                <td><span class="badge bg-secondary">Off</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary">Details</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Zone 3</td>
+                                <td>Kale</td>
+                                <td>
+                                    <div class="progress" style="height: 10px;">
+                                        <div class="progress-bar bg-success" role="progressbar" style="width: 45%;" aria-valuenow="45" aria-valuemin="0" aria-valuemax="100"></div>
+                                    </div>
+                                    <small>Early Growth (45%)</small>
+                                </td>
+                                <td>15 days</td>
+                                <td><span class="badge bg-success">On</span></td>
+                                <td><span class="badge bg-success">On</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary">Details</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Zone 4</td>
+                                <td>Basil</td>
+                                <td>
+                                    <div class="progress" style="height: 10px;">
+                                        <div class="progress-bar bg-success" role="progressbar" style="width: 60%;" aria-valuenow="60" aria-valuemin="0" aria-valuemax="100"></div>
+                                    </div>
+                                    <small>Mid Growth (60%)</small>
+                                </td>
+                                <td>10 days</td>
+                                <td><span class="badge bg-success">On</span></td>
+                                <td><span class="badge bg-secondary">Off</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary">Details</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Zone 5</td>
+                                <td>Arugula</td>
+                                <td>
+                                    <div class="progress" style="height: 10px;">
+                                        <div class="progress-bar bg-success" role="progressbar" style="width: 30%;" aria-valuenow="30" aria-valuemin="0" aria-valuemax="100"></div>
+                                    </div>
+                                    <small>Early Growth (30%)</small>
+                                </td>
+                                <td>18 days</td>
+                                <td><span class="badge bg-success">On</span></td>
+                                <td><span class="badge bg-success">On</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary">Details</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Zone 6</td>
+                                <td>Microgreens Mix</td>
+                                <td>
+                                    <div class="progress" style="height: 10px;">
+                                        <div class="progress-bar bg-success" role="progressbar" style="width: 85%;" aria-valuenow="85" aria-valuemin="0" aria-valuemax="100"></div>
+                                    </div>
+                                    <small>Near Harvest (85%)</small>
+                                </td>
+                                <td>3 days</td>
+                                <td><span class="badge bg-success">On</span></td>
+                                <td><span class="badge bg-secondary">Off</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary">Details</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>Zone 7</td>
+                                <td>Cilantro</td>
+                                <td>
+                                    <div class="progress" style="height: 10px;">
+                                        <div class="progress-bar bg-success" role="progressbar" style="width: 50%;" aria-valuenow="50" aria-valuemin="0" aria-valuemax="100"></div>
+                                    </div>
+                                    <small>Mid Growth (50%)</small>
+                                </td>
+                                <td>12 days</td>
+                                <td><span class="badge bg-success">On</span></td>
+                                <td><span class="badge bg-secondary">Off</span></td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary">Details</button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Alerts and Notifications -->
+<div class="row mb-4">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="bi bi-exclamation-triangle-fill"></i> Active Alerts</h4>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning d-flex align-items-center" role="alert">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <div>
+                        <strong>Zone 2 pH Level High</strong> - Current: 6.8, Target: 6.0-6.5
+                    </div>
+                </div>
+                <div class="alert alert-info d-flex align-items-center" role="alert">
+                    <i class="bi bi-info-circle-fill me-2"></i>
+                    <div>
+                        <strong>Zone 6 Harvest Due</strong> - Microgreens ready for harvest in 3 days
+                    </div>
+                </div>
+                <div class="alert alert-success d-flex align-items-center" role="alert">
+                    <i class="bi bi-check-circle-fill me-2"></i>
+                    <div>
+                        <strong>System Update Complete</strong> - All systems operating normally
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="bi bi-list-task"></i> Upcoming Tasks</h4>
+            </div>
+            <div class="card-body">
+                <ul class="list-group">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-primary rounded-pill me-2">Today</span>
+                            Harvest Zone 2 Spinach
+                        </div>
+                        <button class="btn btn-sm btn-outline-success">Mark Complete</button>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-primary rounded-pill me-2">Today</span>
+                            Nutrient Solution Change - Zones 3, 5
+                        </div>
+                        <button class="btn btn-sm btn-outline-success">Mark Complete</button>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-secondary rounded-pill me-2">Tomorrow</span>
+                            Plant New Seedlings - Zone 2
+                        </div>
+                        <button class="btn btn-sm btn-outline-secondary" disabled>Pending</button>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-secondary rounded-pill me-2">Apr 20</span>
+                            System Maintenance - Filter Cleaning
+                        </div>
+                        <button class="btn btn-sm btn-outline-secondary" disabled>Pending</button>
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge bg-secondary rounded-pill me-2">Apr 22</span>
+                            Harvest Zone 6 Microgreens
+                        </div>
+                        <button class="btn btn-sm btn-outline-secondary" disabled>Pending</button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Resource Usage -->
+<div class="row mb-4">
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="bi bi-bar-chart-line"></i> Resource Usage</h4>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label d-flex justify-content-between">
+                        <span>Water Usage</span>
+                        <span>75 L/day</span>
+                    </label>
+                    <div class="progress" style="height: 10px;">
+                        <div class="progress-bar bg-info" role="progressbar" style="width: 65%;" aria-valuenow="65" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                    <small class="text-muted">65% of daily allocation</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label d-flex justify-content-between">
+                        <span>Electricity Usage</span>
+                        <span>42 kWh/day</span>
+                    </label>
+                    <div class="progress" style="height: 10px;">
+                        <div class="progress-bar bg-warning" role="progressbar" style="width: 78%;" aria-valuenow="78" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                    <small class="text-muted">78% of daily allocation</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label d-flex justify-content-between">
+                        <span>Nutrient Solution</span>
+                        <span>18 L remaining</span>
+                    </label>
+                    <div class="progress" style="height: 10px;">
+                        <div class="progress-bar bg-success" role="progressbar" style="width: 45%;" aria-valuenow="45" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                    <small class="text-muted">45% remaining in reservoir</small>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label d-flex justify-content-between">
+                        <span>CO₂ Supply</span>
+                        <span>8.5 kg remaining</span>
+                    </label>
+                    <div class="progress" style="height: 10px;">
+                        <div class="progress-bar bg-danger" role="progressbar" style="width: 25%;" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                    <small class="text-muted">25% remaining in tank - <span class="text-danger">Order soon</span></small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h4><i class="bi bi-bar-chart-line"></i> Yield Forecast</h4>
+            </div>
+            <div class="card-body">
+                <canvas id="yieldChart" height="250"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% endblock %}
