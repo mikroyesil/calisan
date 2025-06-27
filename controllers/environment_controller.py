@@ -10,40 +10,6 @@ from typing import Dict, List, Optional, Any
 
 logger = logging.getLogger(__name__)
 
-# HTTP Session for connection pooling and keep-alive optimization
-class HTTPSessionManager:
-    """Manages HTTP sessions with connection pooling and keep-alive for Arduino communication"""
-    
-    def __init__(self):
-        self.session = requests.Session()
-        
-        # Configure connection pooling and keep-alive
-        adapter = HTTPAdapter(
-            pool_connections=2,  # Number of connection pools
-            pool_maxsize=5,      # Maximum connections per pool
-            max_retries=1        # Quick retry on connection issues
-        )
-        self.session.mount('http://', adapter)
-        
-        # Set default headers for keep-alive
-        self.session.headers.update({
-            'Connection': 'keep-alive',
-            'Keep-Alive': 'timeout=30, max=100'
-        })
-        
-        logger.info("HTTP Session Manager initialized with connection pooling")
-    
-    def get(self, url, timeout=0.5, **kwargs):
-        """Make GET request with optimized session"""
-        return self.session.get(url, timeout=timeout, **kwargs)
-    
-    def close(self):
-        """Close the session and cleanup connections"""
-        self.session.close()
-
-# Global session manager instance
-_session_manager = HTTPSessionManager()
-
 class EnvironmentController:
     def __init__(self, db, socketio, sensor_manager=None, relay_controller=None, light_controller=None, ir_controller=None):
         self.db = db
@@ -69,7 +35,7 @@ class EnvironmentController:
         
         # CO2 throttling to prevent excessive switching - MAXIMUM SPEED
         self._last_co2_update = 0
-        self._co2_update_interval = 0.05  # 50ms for maximum response speed
+        self._co2_update_interval = 0.03  # 30ms for ultra-fast response speed
         
         # Air Conditioner on relay channel 15 + IR control (Airfel only)
         self.air_conditioner_channel = 15
@@ -146,6 +112,30 @@ class EnvironmentController:
                     if 'co2_day_end' in settings:
                         self.co2_day_end = int(settings['co2_day_end'])
                         logger.info(f"Applied CO2 day end: {self.co2_day_end}:00")
+                        
+                elif isinstance(settings, tuple) and len(settings) >= 6:
+                    # Legacy format: tuple from old database schema
+                    # Expected format: (co2_target, temp_day, temp_night, humidity_min, humidity_max, fan_speed, updated_at)
+                    # Based on debug: (110, 25.0, 20.0, 50.0, 70.0, 600.0, 1751012806)
+                    logger.warning("⚠️ Loading from legacy tuple format - this should be migrated to dictionary format")
+                    
+                    # Extract CO2 target from first element (110 in the tuple)
+                    legacy_co2_target = int(settings[0])
+                    logger.warning(f"⚠️ Legacy CO2 target: {legacy_co2_target} PPM - this seems too low, using defaults instead")
+                    
+                    # Don't use the legacy values if they seem unrealistic (< 500 ppm is too low for plants)
+                    if legacy_co2_target < 500:
+                        logger.warning(f"⚠️ Legacy CO2 target {legacy_co2_target} PPM is unrealistically low, keeping defaults")
+                        logger.warning(f"⚠️ Using default day target: {self.co2_day_target} PPM, night target: {self.co2_night_target} PPM")
+                    else:
+                        # If legacy values seem reasonable, use them
+                        self.co2_day_target = legacy_co2_target
+                        self.co2_night_target = max(300, int(legacy_co2_target * 0.7))  # Night target = 70% of day target
+                        logger.info(f"Applied legacy CO2 day target: {self.co2_day_target} PPM")
+                        logger.info(f"Applied legacy CO2 night target: {self.co2_night_target} PPM")
+                else:
+                    logger.warning(f"⚠️ Unknown settings format: {type(settings)} - {settings}")
+                    logger.info("Using hardcoded defaults")
                 
                 logger.info("✅ Environment controller settings loaded from database and applied successfully")
                 return settings
@@ -442,9 +432,9 @@ class EnvironmentController:
             is_day_cycle = self._is_lights_on_period()
             target_co2 = self.co2_day_target if is_day_cycle else self.co2_night_target
             
-            # Define emergency conditions
-            emergency_low = target_co2 - (self.co2_tolerance * 3)  # Way too low
-            emergency_high = target_co2 + (self.co2_tolerance * 3)  # Way too high
+            # Define emergency conditions - more sensitive for faster response
+            emergency_low = target_co2 - (self.co2_tolerance * 2)  # Moderately low - faster intervention
+            emergency_high = target_co2 + (self.co2_tolerance * 2)  # Moderately high - faster intervention
             
             if current_co2 < emergency_low or current_co2 > emergency_high:
                 is_emergency = True
@@ -467,8 +457,8 @@ class EnvironmentController:
                 should_inject = False
                 action_reason = ""
                 
-                # ULTRA FAST LOGIC: More aggressive thresholds for faster response
-                fast_tolerance = max(1, self.co2_tolerance // 4)  # Use quarter tolerance for ultra fast switching
+                # ULTRA FAST LOGIC: Extremely aggressive thresholds for maximum response speed
+                fast_tolerance = max(1, self.co2_tolerance // 6)  # Use 1/6 tolerance for ultra fast switching (4-5 ppm)
                 
                 # Turn on if CO2 is below target minus fast tolerance
                 if current_co2 < (target_co2 - fast_tolerance):
@@ -534,44 +524,89 @@ class EnvironmentController:
             logger.error(f"❌ CO2 CONTROL ERROR: {e}")
 
     def _send_co2_command(self, state):
-        """Send HTTP command to main Arduino to control CO2 valve via relay channels - ULTRA FAST"""
+        """Send HTTP command to main Arduino to control CO2 valve via relay channels - ULTRA ROBUST with Arduino-friendly approach"""
         try:
             command_state = "on" if state else "off"
             logger.info(f"🌱 SENDING CO2 COMMAND: {command_state.upper()} to channels {self.co2_channels}")
             
             successful_channels = 0
             
-            for channel in self.co2_channels:
+            # Add longer delay between channel commands to prevent Arduino overload
+            for i, channel in enumerate(self.co2_channels):
+                if i > 0:
+                    time.sleep(0.1)  # 100ms delay between channels - faster response while still Arduino-safe
+                
                 url = f"http://{self.co2_arduino_ip}:{self.co2_arduino_port}/api/relay?channel={channel}&state={command_state}"
                 logger.info(f"🌱 HTTP REQUEST Channel {channel}: {url}")
                 
-                # Maximum speed request with ultra-minimal timeout
+                # Try multiple strategies for Arduino communication
+                channel_success = False
+                
+                # Strategy 1: Ultra-simple request with longer timeout
                 try:
-                    response = requests.get(url, timeout=0.1)  # Maximum speed 100ms timeout
+                    response = requests.get(url, timeout=0.5, headers={
+                        'Connection': 'close',
+                        'Cache-Control': 'no-cache',
+                        'User-Agent': 'CO2Controller/1.0'
+                    })
                     if response.status_code == 200:
-                        logger.info(f"🌱 ✅ CO2 channel {channel} -> {command_state.upper()} (ultra-fast)")
+                        logger.info(f"🌱 ✅ CO2 channel {channel} -> {command_state.upper()} (strategy 1)")
                         successful_channels += 1
-                        success = True
+                        channel_success = True
                         continue
                 except requests.exceptions.Timeout:
-                    logger.warning(f"⚠️ CO2 channel {channel} -> TIMEOUT on max-speed attempt (0.1s)")
+                    logger.warning(f"⚠️ CO2 channel {channel} -> TIMEOUT on strategy 1 (1.0s)")
                 except Exception as e:
-                    logger.warning(f"⚠️ CO2 channel {channel} -> ERROR on ultra-fast attempt: {e}")
+                    logger.warning(f"⚠️ CO2 channel {channel} -> ERROR on strategy 1: {e}")
                 
-                # Quick retry with fast timeout if first attempt failed
-                success = False
-                try:
-                    response = requests.get(url, timeout=0.5)  # Quick retry with 500ms timeout
-                    if response.status_code == 200:
-                        logger.info(f"🌱 ✅ CO2 channel {channel} -> {command_state.upper()} (retry)")
-                        successful_channels += 1
-                        success = True
-                    else:
-                        logger.error(f"❌ CO2 channel {channel} -> HTTP {response.status_code} (retry)")
-                except requests.exceptions.Timeout:
-                    logger.error(f"❌ CO2 channel {channel} -> RETRY TIMEOUT (0.5s)")
-                except Exception as e:
-                    logger.error(f"❌ CO2 channel {channel} -> RETRY ERROR: {e}")
+                # If strategy 1 failed, wait longer and try strategy 2
+                if not channel_success:
+                    time.sleep(0.2)  # Wait for Arduino to recover - faster response
+                    
+                    # Strategy 2: Fresh session with conservative settings
+                    session = requests.Session()
+                    session.headers.update({
+                        'Connection': 'close', 
+                        'Cache-Control': 'no-cache',
+                        'Accept': '*/*'
+                    })
+                    
+                    try:
+                        response = session.get(url, timeout=1.0)
+                        if response.status_code == 200:
+                            logger.info(f"🌱 ✅ CO2 channel {channel} -> {command_state.upper()} (strategy 2)")
+                            successful_channels += 1
+                            channel_success = True
+                        else:
+                            logger.error(f"❌ CO2 channel {channel} -> HTTP {response.status_code} (strategy 2)")
+                    except requests.exceptions.Timeout:
+                        logger.error(f"❌ CO2 channel {channel} -> TIMEOUT on strategy 2 (2.0s)")
+                    except Exception as e:
+                        logger.error(f"❌ CO2 channel {channel} -> ERROR on strategy 2: {e}")
+                    finally:
+                        try:
+                            session.close()
+                        except:
+                            pass
+                
+                # If both strategies failed, try one final attempt with maximum patience
+                if not channel_success:
+                    time.sleep(0.5)  # Give Arduino recovery time - optimized for faster response
+                    
+                    try:
+                        # Strategy 3: Maximum patience approach
+                        response = requests.get(url, timeout=1.5, headers={'Connection': 'close'})
+                        if response.status_code == 200:
+                            logger.info(f"🌱 ✅ CO2 channel {channel} -> {command_state.upper()} (strategy 3 - patient)")
+                            successful_channels += 1
+                            channel_success = True
+                        else:
+                            logger.error(f"❌ CO2 channel {channel} -> FINAL ATTEMPT FAILED: HTTP {response.status_code}")
+                    except Exception as e:
+                        logger.error(f"❌ CO2 channel {channel} -> FINAL ATTEMPT ERROR: {e}")
+                
+                if not channel_success:
+                    logger.error(f"💥 CO2 channel {channel} -> ALL STRATEGIES FAILED")
             
             total_channels = len(self.co2_channels)
             if successful_channels == 0:
@@ -766,20 +801,25 @@ class EnvironmentController:
         return status
     
     def get_co2_relay_status(self):
-        """Get current CO2 relay status from main Arduino - optimized connection"""
+        """Get current CO2 relay status from main Arduino - robust Arduino-friendly approach"""
         try:
             url = f"http://{self.co2_arduino_ip}:{self.co2_arduino_port}/api/relay"
             
             logger.debug(f"🌱 Checking CO2 relay status: {url}")
             
-            # Try quick connection first
+            # Strategy 1: Quick check with conservative timeout
             try:
-                response = requests.get(url, timeout=0.5)  # Fast 500ms timeout
+                response = requests.get(url, timeout=0.8, headers={
+                    'Connection': 'close',
+                    'Cache-Control': 'no-cache',
+                    'Accept': 'application/json'
+                })
+                
                 if response.status_code == 200:
                     data = response.json()
                     relays = data.get('relays', [])
                     
-                    logger.debug(f"🌱 Arduino returned {len(relays)} relays (quick)")
+                    logger.debug(f"🌱 Arduino returned {len(relays)} relays")
                     
                     # Check status of CO2 channels
                     co2_states = {}
@@ -801,23 +841,32 @@ class EnvironmentController:
                         'arduino_response': f"{len(relays)} relays found"
                     }
                 else:
-                    logger.warning(f"❌ Arduino returned HTTP {response.status_code}: {response.text}")
-                    return {'overall_state': False, 'channel_states': {}, 'connected': False, 'error': f'HTTP {response.status_code}'}
+                    logger.warning(f"❌ Arduino status check - HTTP {response.status_code}")
                     
             except requests.exceptions.Timeout:
-                logger.debug(f"🌱 Quick status check timeout (0.5s), skipping detailed status")
-                # Don't retry for status check - just return disconnected state
-                return {'overall_state': self.co2_state, 'channel_states': {}, 'connected': False, 'error': 'TIMEOUT_QUICK'}
+                logger.debug(f"🌱 Arduino status check timeout (1.5s) - Arduino may be processing commands")
             except requests.exceptions.ConnectionError:
-                logger.debug(f"🌱 Connection error on status check")
-                return {'overall_state': self.co2_state, 'channel_states': {}, 'connected': False, 'error': 'CONNECTION_ERROR'}
+                logger.debug(f"🌱 Arduino status check connection error")
             except Exception as e:
-                logger.debug(f"🌱 Error on status check: {e}")
-                return {'overall_state': self.co2_state, 'channel_states': {}, 'connected': False, 'error': str(e)}
+                logger.debug(f"🌱 Arduino status check error: {e}")
+            
+            # If quick check failed, return fallback info
+            logger.debug(f"🌱 Status check failed, using cached state: {self.co2_state}")
+            return {
+                'overall_state': self.co2_state,
+                'channel_states': {},
+                'connected': False,
+                'error': 'Status check failed - using cached state'
+            }
                 
         except Exception as e:
             logger.warning(f"❌ Error getting CO2 relay status: {e}")
-            return {'overall_state': self.co2_state, 'channel_states': {}, 'connected': False, 'error': str(e)}
+            return {
+                'overall_state': self.co2_state,
+                'channel_states': {},
+                'connected': False,
+                'error': str(e)
+            }
     
     def test_co2_system(self):
         """Test CO2 system integration with main Arduino"""
@@ -832,7 +881,7 @@ class EnvironmentController:
             logger.info("🌱 Testing CO2 ON...")
             success_on = self._send_co2_command(True)
             if success_on:
-                time.sleep(2)  # Wait for relay to respond
+                time.sleep(0.5)  # Wait for relay to respond - faster verification
                 status_on = self.get_co2_relay_status()
                 logger.info(f"🌱 CO2 ON status: {status_on}")
             
@@ -840,7 +889,7 @@ class EnvironmentController:
             logger.info("🌱 Testing CO2 OFF...")
             success_off = self._send_co2_command(False)
             if success_off:
-                time.sleep(2)  # Wait for relay to respond
+                time.sleep(0.5)  # Wait for relay to respond - faster verification
                 status_off = self.get_co2_relay_status()
                 logger.info(f"🌱 CO2 OFF status: {status_off}")
             

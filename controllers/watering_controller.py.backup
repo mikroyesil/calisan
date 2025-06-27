@@ -3,6 +3,7 @@
 import time
 import datetime
 import logging
+import requests
 from typing import Dict, List, Optional, Any
 
 logger = logging.getLogger(__name__)
@@ -322,10 +323,10 @@ class WateringController:
             
             if 'cycle_seconds_on' in data:
                 new_value = int(data['cycle_seconds_on'])
-                # Enforce minimum ON time of 15 seconds for better visibility
-                if new_value > 0 and new_value < 15:
-                    logger.info(f"🚰 Adjusting cycle_seconds_on from {new_value} to minimum 15 seconds for visibility")
-                    new_value = 15
+                # Enforce minimum ON time of 5 seconds for safety
+                if new_value > 0 and new_value < 5:
+                    logger.info(f"🚰 Adjusting cycle_seconds_on from {new_value} to minimum 5 seconds for safety")
+                    new_value = 5
                 if self.cycle_seconds_on != new_value:
                     old_value = self.cycle_seconds_on
                     self.cycle_seconds_on = new_value
@@ -343,8 +344,8 @@ class WateringController:
             # Handle day/night cycle settings
             if 'day_cycle_seconds_on' in data:
                 new_value = int(data['day_cycle_seconds_on'])
-                if new_value > 0 and new_value < 15:
-                    new_value = 15  # Enforce minimum
+                if new_value > 0 and new_value < 5:
+                    new_value = 5  # Enforce minimum
                 if self.day_cycle_seconds_on != new_value:
                     old_value = self.day_cycle_seconds_on
                     self.day_cycle_seconds_on = new_value
@@ -361,8 +362,8 @@ class WateringController:
             
             if 'night_cycle_seconds_on' in data:
                 new_value = int(data['night_cycle_seconds_on'])
-                if new_value > 0 and new_value < 15:
-                    new_value = 15  # Enforce minimum
+                if new_value > 0 and new_value < 5:
+                    new_value = 5  # Enforce minimum
                 if self.night_cycle_seconds_on != new_value:
                     old_value = self.night_cycle_seconds_on
                     self.night_cycle_seconds_on = new_value
@@ -399,102 +400,46 @@ class WateringController:
                     logger.info(f"🚰 Updated max_continuous_run: {self.max_continuous_run}")
             
             logger.info(f"🚰 AFTER UPDATE: ON={self.cycle_seconds_on}s, OFF={self.cycle_seconds_off}s")
+            logger.info(f"🚰 DAY: ON={self.day_cycle_seconds_on}s, OFF={self.day_cycle_seconds_off}s")
+            logger.info(f"🚰 NIGHT: ON={self.night_cycle_seconds_on}s, OFF={self.night_cycle_seconds_off}s")
             
+            # If settings changed, save and apply immediately
             if changed:
-                # Make sure to call save_settings to persist changes
-                success = self.save_settings()
-                if not success:
+                # Save the updated settings to database
+                save_success = self.save_settings()
+                if not save_success:
                     logger.error("🚰 Failed to save settings to database")
                     return False
                     
                 logger.info("🚰 Settings updated and saved to database")
                 
-                # FORCE reload from database to verify save worked
-                self.load_settings()
-                logger.info(f"🚰 VERIFIED AFTER RELOAD: ON={self.cycle_seconds_on}s, OFF={self.cycle_seconds_off}s")
+                # Calculate what the pump state should be with new settings
+                current_datetime = datetime.datetime.now()
+                expected_pump_state = self._calculate_pump_state(current_datetime, time.time())
                 
-                # Force an immediate update to apply new settings to the hardware
-                logger.info("🚰 Triggering immediate update to apply new watering settings")
+                logger.info(f"🚰 Expected pump state with new settings: {'ON' if expected_pump_state else 'OFF'}")
                 
-                # Store the original rate limiting values
-                original_min_state_change_interval = self.min_state_change_interval
-                original_last_schedule_check = self.last_schedule_check
+                # Verify and correct hardware state if needed
+                hardware_corrected = self._verify_and_correct_hardware_state(expected_pump_state)
                 
-                try:
-                    # Completely disable rate limiting to ensure changes apply immediately
-                    self.min_state_change_interval = 0
-                    self.last_schedule_check = 0  # Reset the last check time to force update
-                    self.last_state_change = 0  # Reset last state change time
-                    
-                    # First, turn off pump to reset the cycle
-                    if self.pump_state:
-                        logger.info("🚰 Turning pump off to reset cycle with new settings")
-                        self._force_pump_off()
-                        time.sleep(0.5)  # Small delay to ensure commands don't conflict
-                    
-                    # Force a direct calculation of the pump state with new settings
-                    now = time.time()
-                    current_datetime = datetime.datetime.now()
-                    
-                    # Calculate whether pump should be on right now with new settings
-                    should_be_on = self._calculate_pump_state(current_datetime, now)
-                    logger.info(f"🚰 New settings calculation result: pump should be {'ON' if should_be_on else 'OFF'}")
-                    
-                    # Apply the calculated state directly using the most reliable methods
-                    if should_be_on:
-                        logger.info("🚰 Setting pump ON with new settings")
-                        success = self._set_pump_state(True)
-                        if not success:
-                            # Retry once if failed
-                            logger.warning("🚰 First attempt to set pump ON failed, retrying...")
-                            time.sleep(0.5)
-                            self._set_pump_state(True)
-                    else:
-                        logger.info("🚰 Setting pump OFF with new settings")
-                        success = self._force_pump_off()  # Use force off for more reliable shutdown
-                        
-                    # Force the actual hardware state to match our desired state
-                    self._verify_and_correct_hardware_state(should_be_on)
-                    
-                    # Ensure update runs without rate limiting
-                    self.last_schedule_check = 0
-                    
-                    # Call update to ensure everything is consistent
-                    self.update(None)
-                    
-                    # Set last_schedule_check to now to avoid immediate re-update
-                    self.last_schedule_check = now
-                    logger.info("🚰 Settings have been successfully applied to hardware")
-                    
-                except Exception as e:
-                    logger.error(f"🚰 Error during immediate settings update: {e}")
-                    # Even if we had an error, try one more verification to make sure the hardware state is correct
-                    try:
-                        self._verify_and_correct_hardware_state(self._calculate_pump_state(datetime.datetime.now(), time.time()))
-                    except Exception as verify_error:
-                        logger.error(f"🚰 Additional error during hardware verification: {verify_error}")
-                    
-                finally:
-                    # Restore rate limiting after applying changes
-                    self.min_state_change_interval = original_min_state_change_interval
-                    logger.info("🚰 Restored rate limiting after applying settings")
+                if hardware_corrected:
+                    logger.info("🚰 Hardware state verified/corrected successfully")
+                else:
+                    logger.warning("🚰 Hardware state verification/correction failed")
                 
                 # Emit event to notify clients
                 if self.socketio:
                     try:
                         self.socketio.emit('watering_settings_updated', self.get_settings())
                         logger.info("🚰 Emitted watering_settings_updated event")
-                        
-                        # Also recalculate and emit the next cycle info
-                        next_cycle_info = self.calculate_next_cycle_info()
-                        self.socketio.emit('watering_next_cycle_updated', next_cycle_info)
-                        logger.info(f"🚰 Emitted next cycle update: {next_cycle_info}")
                     except Exception as e:
                         logger.error(f"🚰 Error emitting settings update event: {e}")
-            else:
-                logger.info("🚰 No settings were changed")
                 
-            return True
+                return True
+            else:
+                logger.info("🚰 No settings changed")
+                return True
+                
         except Exception as e:
             logger.error(f"🚰 Error updating watering settings: {e}", exc_info=True)
             return False
@@ -919,7 +864,7 @@ class WateringController:
                     
                     # Use full URL with proper scheme
                     response = requests.post(
-                        'http://localhost:5002/api/relay-control',
+                        'http://localhost:5001/api/relay-control',
                         json={
                             'channel': self.water_pump_relay_channel,
                             'state': state
@@ -993,7 +938,11 @@ class WateringController:
                 try:
                     import requests
                     
+<<<<<<< HEAD
                     response = requests.get('http://localhost:5002/api/relay-states', timeout=2)
+=======
+                    response = requests.get('http://localhost:5001/api/relay-states', timeout=2)
+>>>>>>> d383744a6fa8a55edd346126ef100df2e4cf2aa9
                     if response.status_code == 200:
                         data = response.json()
                         if 'states' in data and str(self.water_pump_relay_channel) in data['states']:
@@ -1060,7 +1009,11 @@ class WateringController:
                 logger.info(f"Forcing pump OFF with relay-control API")
                 
                 response = requests.post(
+<<<<<<< HEAD
                     'http://localhost:5002/api/relay-control',
+=======
+                    'http://localhost:5001/api/relay-control',
+>>>>>>> d383744a6fa8a55edd346126ef100df2e4cf2aa9
                     json={
                         'channel': self.water_pump_relay_channel,
                         'state': False
@@ -1169,6 +1122,38 @@ class WateringController:
                     crc = crc >> 1
         return [crc & 0xFF, (crc >> 8) & 0xFF]
 
+    def load_schedules(self):
+        """DISABLED: No schedules needed - only cycle settings"""
+        logger.info("🚰 Schedule loading disabled - using cycle settings only")
+        self.schedules = []
+        return True
+
+    def save_schedule(self, schedule_data):
+        """DISABLED: No schedules needed - only cycle settings"""
+        logger.info("🚰 Schedule saving disabled - use cycle settings instead")
+        return False
+    
+    def delete_schedule(self, schedule_id):
+        """DISABLED: No schedules needed - only cycle settings"""
+        logger.info("🚰 Schedule deletion disabled - no schedules used")
+        return False
+    
+    def get_schedules(self):
+        """DISABLED: No schedules needed - only cycle settings"""
+        logger.info("🚰 No schedules - using cycle settings only")
+        return []
+
+    def execute_scheduled_watering(self, schedule_id):
+        """DISABLED: No schedules needed - only cycle settings"""
+        logger.info("🚰 Scheduled watering disabled - using cycle settings only")
+        return False
+
+    def register_with_scheduler(self, scheduler):
+        """DISABLED: No schedules needed - only cycle settings"""
+        logger.info("🚰 Scheduler registration disabled - using cycle settings only")
+        self.scheduler_initialized = True
+        return True
+
     def _calculate_pump_state(self, current_datetime, now):
         """
         Calculate whether the pump should be on based on current time and settings.
@@ -1271,7 +1256,11 @@ class WateringController:
                 try:
                     import requests
                     
+<<<<<<< HEAD
                     response = requests.get('http://localhost:5002/api/relay-states', timeout=2)
+=======
+                    response = requests.get('http://localhost:5001/api/relay-states', timeout=2)
+>>>>>>> d383744a6fa8a55edd346126ef100df2e4cf2aa9
                     if response.status_code == 200:
                         data = response.json()
                         if 'states' in data and str(self.water_pump_relay_channel) in data['states']:

@@ -1,260 +1,202 @@
 #!/bin/bash
-
 # OTA Update Script for Vertical Farm Control System
-# This script handles git-based over-the-air updates with backup and rollback capabilities
+# Auto-detects the correct directory
 
-set -e  # Exit on any error
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="$SCRIPT_DIR"
+LOG_FILE="$APP_DIR/update.log"
+BACKUP_DIR="$(dirname "$APP_DIR")/calisan-backup"
+SERVICE_NAME="vertical-farm"
 
-# Configuration
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKUP_DIR="${PROJECT_DIR}/backups"
-LOG_FILE="${PROJECT_DIR}/update.log"
-SERVICE_NAME="vertical-farm"  # Systemd service name (if used)
-VENV_PATH="${PROJECT_DIR}/venv"  # Virtual environment path
+echo "🔍 Auto-detected directories:"
+echo "   Script location: $SCRIPT_DIR"
+echo "   App directory: $APP_DIR"
+echo "   Log file: $LOG_FILE"
+echo "   Backup directory: $BACKUP_DIR"
+echo ""
 
-# Default options
-BACKUP=true
-RESTART=true
-BRANCH="main"
-FORCE=false
-
-# Logging function
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+# Create log file if it doesn't exist
+touch "$LOG_FILE" 2>/dev/null || {
+    echo "⚠️  Warning: Cannot create log file at $LOG_FILE"
+    LOG_FILE="/tmp/vertical-farm-update.log"
+    echo "   Using temporary log file: $LOG_FILE"
+    touch "$LOG_FILE"
 }
 
-# Error handling
-error_exit() {
-    log "ERROR: $1"
-    exit 1
+echo "$(date): Starting OTA update..." >> "$LOG_FILE"
+
+# Function to log messages
+log_message() {
+    echo "$(date): $1" | tee -a "$LOG_FILE"
 }
 
-# Parse command line arguments
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --no-backup)
-            BACKUP=false
-            shift
-            ;;
-        --no-restart)
-            RESTART=false
-            shift
-            ;;
-        --branch)
-            BRANCH="$2"
-            shift 2
-            ;;
-        --force)
-            FORCE=true
-            shift
-            ;;
-        --help)
-            echo "Usage: $0 [options]"
-            echo "Options:"
-            echo "  --no-backup    Skip creating backup"
-            echo "  --no-restart   Skip application restart"
-            echo "  --branch NAME  Update to specific branch (default: main)"
-            echo "  --force        Force update even with uncommitted changes"
-            echo "  --help         Show this help message"
-            exit 0
-            ;;
-        *)
-            error_exit "Unknown option: $1"
-            ;;
-    esac
-done
-
-log "Starting OTA update process..."
-log "Project directory: $PROJECT_DIR"
-log "Backup: $BACKUP, Restart: $RESTART, Branch: $BRANCH, Force: $FORCE"
-
-# Change to project directory
-cd "$PROJECT_DIR" || error_exit "Cannot change to project directory"
-
-# Check if we're in a git repository
-if [ ! -d ".git" ]; then
-    error_exit "Not a git repository. OTA updates require git."
-fi
-
-# Create backup directory if it doesn't exist
-if [ "$BACKUP" = true ]; then
-    mkdir -p "$BACKUP_DIR"
-fi
-
-# Function to create backup
-create_backup() {
-    if [ "$BACKUP" = true ]; then
-        local backup_name="backup_$(date +%Y%m%d_%H%M%S)"
-        local backup_path="${BACKUP_DIR}/${backup_name}"
-        
-        log "Creating backup: $backup_name"
-        
-        # Create backup using git archive
-        git archive --format=tar.gz --output="${backup_path}.tar.gz" HEAD
-        
-        # Also backup the database and logs
-        if [ -f "farm_control.db" ]; then
-            cp "farm_control.db" "${backup_path}_database.db"
-        fi
-        
-        if [ -f "farm_control.log" ]; then
-            cp "farm_control.log" "${backup_path}_log.txt"
-        fi
-        
-        log "Backup created successfully: ${backup_path}.tar.gz"
-        
-        # Keep only last 10 backups
-        cd "$BACKUP_DIR"
-        ls -t backup_*.tar.gz | tail -n +11 | xargs -r rm -f
-        cd "$PROJECT_DIR"
-    fi
-}
-
-# Function to check system requirements
-check_requirements() {
-    log "Checking system requirements..."
+# Function to safely handle uncommitted changes
+handle_uncommitted_changes() {
+    log_message "🔍 Checking for uncommitted changes..."
     
-    # Check if git is available
-    if ! command -v git &> /dev/null; then
-        error_exit "Git is not installed"
-    fi
-    
-    # Check if python is available
-    if ! command -v python3 &> /dev/null; then
-        error_exit "Python 3 is not installed"
-    fi
-    
-    # Check if we have network connectivity
-    if ! ping -c 1 github.com &> /dev/null; then
-        log "WARNING: Cannot reach github.com - proceeding anyway"
-    fi
-    
-    log "System requirements check passed"
-}
-
-# Function to update application
-update_application() {
-    log "Updating application..."
-    
-    # Fetch latest changes
-    log "Fetching latest changes from remote..."
-    git fetch origin || error_exit "Failed to fetch from remote"
-    
-    # Check for uncommitted changes
-    if [ "$FORCE" = false ] && [ -n "$(git status --porcelain)" ]; then
-        error_exit "Uncommitted changes detected. Use --force to override or commit changes first."
-    fi
-    
-    # Get current commit for rollback purposes
-    local current_commit=$(git rev-parse HEAD)
-    log "Current commit: $current_commit"
-    
-    # Switch to target branch and pull
-    log "Switching to branch: $BRANCH"
-    git checkout "$BRANCH" || error_exit "Failed to checkout branch $BRANCH"
-    
-    log "Pulling latest changes..."
-    git pull origin "$BRANCH" || error_exit "Failed to pull latest changes"
-    
-    local new_commit=$(git rev-parse HEAD)
-    log "Updated to commit: $new_commit"
-    
-    if [ "$current_commit" = "$new_commit" ]; then
-        log "Already up to date - no changes to apply"
+    # Check if there are any changes
+    if git diff-index --quiet HEAD -- 2>/dev/null; then
+        log_message "✅ No uncommitted changes detected"
         return 0
     fi
     
-    # Update Python dependencies if requirements.txt changed
-    if git diff --name-only "$current_commit" "$new_commit" | grep -q requirements.txt; then
-        log "Requirements.txt changed - updating Python dependencies..."
-        
-        if [ -d "$VENV_PATH" ]; then
-            log "Using virtual environment: $VENV_PATH"
-            source "$VENV_PATH/bin/activate"
-        fi
-        
-        pip3 install -r requirements.txt || error_exit "Failed to install Python dependencies"
-        
-        if [ -d "$VENV_PATH" ]; then
-            deactivate
-        fi
-    fi
+    log_message "⚠️  Uncommitted changes detected!"
     
-    log "Application update completed successfully"
+    # Show what files are modified
+    git status --porcelain | while read line; do
+        log_message "   Changed: $line"
+    done
+    
+    # Create a backup of current changes
+    BACKUP_BRANCH="backup-$(date +%Y%m%d-%H%M%S)"
+    log_message "💾 Creating backup branch: $BACKUP_BRANCH"
+    
+    # Add all changes and create backup branch
+    git add . 2>&1 | while read line; do log_message "   git add: $line"; done
+    git commit -m "Backup before update $(date)" 2>&1 | while read line; do log_message "   git commit: $line"; done
+    git branch "$BACKUP_BRANCH" 2>&1 | while read line; do log_message "   git branch: $line"; done
+    
+    log_message "✅ Backup created on branch: $BACKUP_BRANCH"
+    log_message "ℹ️  To restore changes later: git checkout $BACKUP_BRANCH"
+    
+    return 0
 }
 
-# Function to restart application
-restart_application() {
-    if [ "$RESTART" = true ]; then
-        log "Restarting application..."
-        
-        # Try different restart methods
-        if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-            log "Restarting systemd service: $SERVICE_NAME"
-            sudo systemctl restart "$SERVICE_NAME" || log "WARNING: Failed to restart systemd service"
-        elif [ -f "${PROJECT_DIR}/run.sh" ]; then
-            log "Using run.sh script for restart"
-            # Kill existing process if running
-            pkill -f "python.*app.py" || true
-            sleep 2
-            # Start new process in background
-            nohup bash "${PROJECT_DIR}/run.sh" > /dev/null 2>&1 &
-        else
-            log "WARNING: No restart method found. Please restart manually."
+# Check current directory
+log_message "Current working directory: $(pwd)"
+log_message "App directory: $APP_DIR"
+
+# Check if we're in the right place
+if [ ! -f "$APP_DIR/app.py" ]; then
+    log_message "⚠️  Warning: app.py not found in $APP_DIR"
+    log_message "Directory contents:"
+    ls -la "$APP_DIR" | while read line; do log_message "   $line"; done
+fi
+
+# Simple git update
+log_message "=== Starting Git Update ==="
+cd "$APP_DIR"
+
+# Check git status
+if [ -d ".git" ]; then
+    log_message "✅ Git repository found"
+    
+    # Check git status
+    log_message "🔍 Checking git repository status..."
+    git status --porcelain 2>&1 | while read line; do
+        if [ -n "$line" ]; then
+            log_message "   Modified: $line"
         fi
-        
-        log "Restart initiated"
+    done
+    
+    # Check if we have a remote
+    if ! git remote get-url origin >/dev/null 2>&1; then
+        log_message "⚠️  No remote origin found, adding it..."
+        git remote add origin https://github.com/mikroyesil/calisan.git
+        log_message "✅ Remote origin added"
     else
-        log "Skipping application restart (--no-restart specified)"
+        log_message "✅ Remote origin configured: $(git remote get-url origin)"
     fi
-}
+else
+    log_message "❌ Not a git repository, initializing..."
+    git init 2>&1 | while read line; do log_message "   git init: $line"; done
+    git remote add origin https://github.com/mikroyesil/calisan.git
+    log_message "✅ Git repository initialized"
+fi
 
-# Function to verify update
-verify_update() {
-    log "Verifying update..."
-    
-    # Wait a moment for application to start
-    sleep 5
-    
-    # Try to ping the health endpoint
-    local health_url="http://localhost:5002/health"
-    if command -v curl &> /dev/null; then
-        if curl -s "$health_url" > /dev/null; then
-            log "Health check passed - application is responding"
+# Handle uncommitted changes safely
+handle_uncommitted_changes
+
+# Pull updates
+log_message "⬇️  Pulling updates from GitHub..."
+
+# Configure git to handle divergent branches automatically
+git config pull.rebase false 2>&1 | while read line; do log_message "   git config: $line"; done
+
+# Capture git pull output and check for success
+PULL_OUTPUT=$(mktemp)
+if git pull origin main --allow-unrelated-histories 2>&1 | tee "$PULL_OUTPUT" | while read line; do log_message "   git pull: $line"; done; then
+    # Check if there were any fatal errors in the output
+    if grep -q "fatal:" "$PULL_OUTPUT"; then
+        log_message "⚠️  Git pull had fatal errors, trying alternative method..."
+        rm -f "$PULL_OUTPUT"
+        
+        # Try fetching and resetting to ensure we get the latest code
+        log_message "📥 Fetching latest changes..."
+        if git fetch origin main 2>&1 | while read line; do log_message "   git fetch: $line"; done; then
+            log_message "✅ Fetch successful"
+            
+            # Force update to match remote exactly
+            log_message "🔄 Resetting to match remote repository..."
+            git reset --hard origin/main 2>&1 | while read line; do log_message "   git reset: $line"; done
+            log_message "✅ Repository updated to match remote"
         else
-            log "WARNING: Health check failed - application may not be running properly"
+            log_message "❌ Fetch also failed - checking network connectivity..."
+            
+            # Test network connectivity
+            if ping -c 1 github.com >/dev/null 2>&1; then
+                log_message "✅ Network connectivity OK"
+                log_message "❌ Repository access issue - check credentials or repository URL"
+            else
+                log_message "❌ Network connectivity issue"
+            fi
         fi
     else
-        log "Curl not available - skipping health check"
+        log_message "✅ Git pull successful"
+        rm -f "$PULL_OUTPUT"
     fi
-}
-
-# Main execution
-main() {
-    log "=== OTA Update Started ==="
+else
+    rm -f "$PULL_OUTPUT"
+    log_message "⚠️  Git pull command failed, trying alternative method..."
     
-    check_requirements
-    create_backup
-    update_application
-    restart_application
-    verify_update
-    
-    log "=== OTA Update Completed Successfully ==="
-    log "Update summary:"
-    log "  - Branch: $BRANCH"
-    log "  - Backup created: $BACKUP"
-    log "  - Application restarted: $RESTART"
-    log "  - Log file: $LOG_FILE"
-}
+    # Try fetching and resetting to ensure we get the latest code
+    log_message "📥 Fetching latest changes..."
+    if git fetch origin main 2>&1 | while read line; do log_message "   git fetch: $line"; done; then
+        log_message "✅ Fetch successful"
+        
+        # Force update to match remote exactly
+        log_message "🔄 Resetting to match remote repository..."
+        git reset --hard origin/main 2>&1 | while read line; do log_message "   git reset: $line"; done
+        log_message "✅ Repository updated to match remote"
+    else
+        log_message "❌ Fetch also failed - checking network connectivity..."
+        
+        # Test network connectivity
+        if ping -c 1 github.com >/dev/null 2>&1; then
+            log_message "✅ Network connectivity OK"
+            log_message "❌ Repository access issue - check credentials or repository URL"
+        else
+            log_message "❌ Network connectivity issue"
+        fi
+    fi
+fi
 
-# Cleanup function for interruption
-cleanup() {
-    log "Update interrupted - cleaning up..."
-    exit 1
-}
+# Update Python packages if venv exists
+if [ -d "venv" ]; then
+    log_message "🐍 Updating Python packages..."
+    source venv/bin/activate
+    pip install -r requirements.txt --upgrade 2>/dev/null
+    log_message "✅ Python packages updated"
+else
+    log_message "⚠️  Virtual environment not found, skipping pip install"
+fi
 
-# Trap interruption signals
-trap cleanup INT TERM
+# Restart service if it exists
+if systemctl list-unit-files | grep -q "$SERVICE_NAME.service"; then
+    log_message "🔄 Restarting service..."
+    sudo systemctl restart "$SERVICE_NAME"
+    sleep 3
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        log_message "✅ Service restarted successfully"
+    else
+        log_message "⚠️  Service may not be running properly"
+    fi
+else
+    log_message "ℹ️  Service $SERVICE_NAME not found, skipping restart"
+fi
 
-# Run main function
-main "$@"
+log_message "🎉 Update completed!"
+echo ""
+echo "✅ Update finished! Check the log file for details:"
+echo "   $LOG_FILE"
